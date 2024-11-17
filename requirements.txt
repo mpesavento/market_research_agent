@@ -1,16 +1,20 @@
-openai==1.30.1
-langgraph==0.0.53
-langchain==0.3.7
-langchain_core~=0.3.19
+openai==1.54.4
+langchain~=0.3.7
+langgraph~=0.2.50
+langchain_core
 langchain_openai
 langchain-community
 python-dotenv
 aiosqlite
 pygments
-pygraphviz
 gradio
 streamlit
 flask
 flask-cors
 crewai==0.80.0
 crewai_tools
+markdown
+pdfkit
+# pygraphviz
+# wkhtmltopdf-pack  # For PDF conversion
+tavily-python
