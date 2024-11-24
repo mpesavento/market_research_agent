@@ -5,78 +5,64 @@ Defines the execution graph and manages agent interactions.
 """
 
 from langgraph.graph import StateGraph, END
-from utils import AgentState, AgentType
-from agents import MarketTrendsAgent, CompetitorAgent, ConsumerAgent, ReportAgent
+from typing import TypedDict, List
+from langchain_core.messages import AnyMessage
+from agents import (
+    market_trends_node, competitor_node,
+    consumer_node, report_node, should_continue, MarketResearchState
+)
 
-class MarketResearchWorkflow:
+
+def build_research_graph():
     """
-    Coordinates the execution of multiple agents for market research.
+    Create the workflow graph defining agent interactions.
 
-    Manages the workflow of market trends analysis, competitor analysis,
-    consumer insights, and report generation.
+    Returns:
+        Graph: Compiled workflow graph
     """
+    builder = StateGraph(MarketResearchState)
 
-    def __init__(self):
-        """Initialize the workflow with all required agents."""
-        self.market_trends_agent = MarketTrendsAgent()
-        self.competitor_agent = CompetitorAgent()
-        self.consumer_agent = ConsumerAgent()
-        self.report_agent = ReportAgent()
-        self.workflow = self._create_workflow()
+    # Add nodes
+    builder.add_node("market_trends", market_trends_node)
+    builder.add_node("competitor", competitor_node)
+    builder.add_node("consumer", consumer_node)
+    builder.add_node("report", report_node)
 
-    def _create_workflow(self):
-        """
-        Create the workflow graph defining agent interactions.
+    # Set entry point
+    builder.set_entry_point("market_trends")
 
-        Returns:
-            Graph: Compiled workflow graph
-        """
-        workflow = StateGraph(AgentState)
+    # Add conditional edges
+    builder.add_conditional_edges(
+        "market_trends",
+        should_continue,
+        {
+            "competitor": "competitor",
+            END: END
+        }
+    )
 
-        # Add agent nodes
-        workflow.add_node(AgentType.MARKET_TRENDS.value, self.market_trends_agent.process)
-        workflow.add_node(AgentType.COMPETITOR.value, self.competitor_agent.process)
-        workflow.add_node(AgentType.CONSUMER.value, self.consumer_agent.process)
-        workflow.add_node(AgentType.REPORT.value, self.report_agent.process)
+    builder.add_conditional_edges(
+        "competitor",
+        should_continue,
+        {
+            "consumer": "consumer",
+            END: END
+        }
+    )
 
-        # Define edges
-        workflow.add_edge(AgentType.MARKET_TRENDS.value, AgentType.COMPETITOR.value)
-        workflow.add_edge(AgentType.COMPETITOR.value, AgentType.CONSUMER.value)
-        workflow.add_edge(AgentType.CONSUMER.value, AgentType.REPORT.value)
+    builder.add_conditional_edges(
+        "consumer",
+        should_continue,
+        {
+            "report": "report",
+            END: END
+        }
+    )
 
-        # Add conditional ending
-        workflow.add_conditional_edges(
-            AgentType.REPORT.value,
-            self._should_end,
-            {
-                True: END,
-                False: AgentType.MARKET_TRENDS.value
-            }
-        )
+    builder.add_conditional_edges(
+        "report",
+        should_continue,
+        {END: END}
+    )
 
-        return workflow.compile()
-
-    @staticmethod
-    def _should_end(state: AgentState) -> bool:
-        """
-        Determine if the workflow should end.
-
-        Args:
-            state (AgentState): Current workflow state
-
-        Returns:
-            bool: True if workflow should end, False otherwise
-        """
-        return state["next_agent"] == AgentType.END.value
-
-    def run(self, state: AgentState):
-        """
-        Run the workflow with the given initial state.
-
-        Args:
-            state (AgentState): Initial workflow state
-
-        Returns:
-            Iterator: Stream of states as the workflow progresses
-        """
-        return self.workflow.stream(state)
+    return builder.compile()

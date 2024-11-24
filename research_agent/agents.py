@@ -3,11 +3,11 @@
 Agent implementations for the market research system.
 Includes base agent class and specialized agents for different aspects of market research.
 """
-
+import os
 from datetime import datetime
 import json
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE
 from prompts import (
@@ -17,173 +17,219 @@ from prompts import (
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 from tavily import TavilyClient
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, List, Any
+from pydantic import BaseModel
 
-# client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
-# tool = TavilySearchResults(max_results=4) #increased number of results
+# Global tools setup
+# tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
+search_tool = TavilySearchResults(max_results=4)
 
-class BaseAgent:
-    """
-    Base agent class providing common functionality for all market research agents.
+# Model definition
+model = ChatOpenAI(model=MODEL_NAME, temperature=TEMPERATURE)
 
-    Attributes:
-        role_description (str): Description of the agent's role and responsibilities
-        agent_type (str): Type identifier for the agent
-        next_agent (str): Identifier of the next agent in the workflow
-        chain (Chain): LangChain chain for processing queries
-    """
+class MarketResearchState(TypedDict):
+    """State for the market research workflow"""
+    messages: List[AnyMessage]
+    research_data: dict
+    next_agent: str
+    final_report: str | None
 
-    def __init__(self, role_description: str, agent_type: str, next_agent: str):
-        """
-        Initialize a new agent.
+class SearchQueries(BaseModel):
+    """Model for structured search queries"""
+    queries: List[str]
 
-        Args:
-            role_description (str): Description of the agent's role
-            agent_type (str): Type identifier for the agent
-            next_agent (str): Next agent in the workflow
-        """
-        self.role_description = role_description
-        self.agent_type = agent_type
-        self.next_agent = next_agent
-        self.chain = self._create_chain()
+def market_trends_node(state: MarketResearchState):
+    """Node for market trends research"""
+    queries = model.with_structured_output(SearchQueries).invoke([
+        SystemMessage(content=MARKET_TRENDS_ROLE),
+        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
+    ])
 
-    def _create_chain(self):
-        """
-        Create the LangChain processing chain for the agent.
+    research_data = state['research_data']
+    if 'market_trends' not in research_data:
+        research_data['market_trends'] = {}
 
-        Returns:
-            Chain: Configured LangChain chain
-        """
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", BASE_PROMPT),
-            MessagesPlaceholder(variable_name="messages"),
-        ])
+    # Perform searches and collect results
+    search_results = []
+    for query in queries.queries:
+        results = search_tool.invoke({"query": query})
+        search_results.extend(results)
 
-        return prompt | ChatOpenAI(
-            temperature=TEMPERATURE,
-            model=MODEL_NAME
-        )
+    # Process results with LLM
+    response = model.invoke([
+        SystemMessage(content=MARKET_TRENDS_ROLE),
+        HumanMessage(content=f"Analyze these market trends findings:\n\n{json.dumps(search_results)}")
+    ])
 
-    def process(self, state: AgentState) -> AgentState:
-        """
-        Process the current state and generate response.
+    research_data['market_trends'].update({
+        "last_update": datetime.now().isoformat(),
+        "findings": response.content,
+        "search_results": search_results
+    })
 
-        Args:
-            state (AgentState): Current state of the workflow
+    return {
+        "messages": state['messages'] + [response],
+        "research_data": research_data,
+        "next_agent": "competitor",
+        "final_report": None
+    }
 
-        Returns:
-            AgentState: Updated state after processing
-        """
-        messages = state["messages"]
-        research_data = state["research_data"]
+def competitor_node(state: MarketResearchState):
+    """Node for competitor analysis"""
+    queries = model.with_structured_output(SearchQueries).invoke([
+        SystemMessage(content=COMPETITOR_ROLE),
+        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
+    ])
 
-        response = self.chain.invoke({
-            "role_description": self.role_description,
-            "research_context": json.dumps(research_data.get(self.agent_type, {})),
-            "previous_findings": json.dumps(research_data),
-            "messages": messages,
-            "query": messages[-1].content if messages else f"Analyze {self.agent_type}"
-        })
+    research_data = state['research_data']
+    if 'competitor' not in research_data:
+        research_data['competitor'] = {}
 
-        if self.agent_type not in research_data:
-            research_data[self.agent_type] = {}
+    # Perform searches and collect results
+    search_results = []
+    for query in queries.queries:
+        results = search_tool.invoke({"query": query})
+        search_results.extend(results)
 
-        research_data[self.agent_type].update({
-            "last_update": datetime.now().isoformat(),
-            "findings": response.content
-        })
+    # Process results with LLM
+    response = model.invoke([
+        SystemMessage(content=COMPETITOR_ROLE),
+        HumanMessage(content=f"Analyze these competitor findings:\n\n{json.dumps(search_results)}")
+    ])
 
-        return {
-            "messages": messages + [response],
-            "research_data": research_data,
-            "next_agent": self.next_agent,
-            "final_report": None
+    research_data['competitor'].update({
+        "last_update": datetime.now().isoformat(),
+        "findings": response.content,
+        "search_results": search_results
+    })
+
+    return {
+        "messages": state['messages'] + [response],
+        "research_data": research_data,
+        "next_agent": "consumer",
+        "final_report": None
+    }
+
+def consumer_node(state: MarketResearchState):
+    """Node for consumer analysis"""
+    queries = model.with_structured_output(SearchQueries).invoke([
+        SystemMessage(content=CONSUMER_ROLE),
+        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze consumer behavior")
+    ])
+
+    research_data = state['research_data']
+    if 'consumer' not in research_data:
+        research_data['consumer'] = {}
+
+    # Perform searches and collect results
+    search_results = []
+    for query in queries.queries:
+        results = search_tool.invoke({"query": query})
+        search_results.extend(results)
+
+    # Process results with LLM
+    response = model.invoke([
+        SystemMessage(content=CONSUMER_ROLE),
+        HumanMessage(content=f"Analyze these consumer insights:\n\n{json.dumps(search_results)}")
+    ])
+
+    research_data['consumer'].update({
+        "last_update": datetime.now().isoformat(),
+        "findings": response.content,
+        "search_results": search_results
+    })
+
+    return {
+        "messages": state['messages'] + [response],
+        "research_data": research_data,
+        "next_agent": "report",
+        "final_report": None
+    }
+
+def report_node(state: MarketResearchState):
+    """Node for final report generation"""
+    # Compile all research data
+    market_trends = state['research_data'].get('market_trends', {}).get('findings', '')
+    competitor_analysis = state['research_data'].get('competitor', {}).get('findings', '')
+    consumer_insights = state['research_data'].get('consumer', {}).get('findings', '')
+
+    # Generate comprehensive report
+    report_prompt = f"""Based on our research:
+
+Market Trends:
+{market_trends}
+
+Competitor Analysis:
+{competitor_analysis}
+
+Consumer Insights:
+{consumer_insights}
+
+Please generate a comprehensive market research report that synthesizes all these findings.
+Include key insights, recommendations, and potential opportunities."""
+
+    response = model.invoke([
+        SystemMessage(content=REPORT_ROLE),
+        HumanMessage(content=report_prompt)
+    ])
+
+    return {
+        "messages": state['messages'] + [response],
+        "research_data": state['research_data'],
+        "next_agent": END,
+        "final_report": response.content
+    }
+
+def should_continue(state: MarketResearchState):
+    """Determine next node based on state"""
+    return state["next_agent"]
+
+def build_research_graph():
+    """Build the research workflow graph"""
+    builder = StateGraph(MarketResearchState)
+
+    # Add nodes
+    builder.add_node("market_trends", market_trends_node)
+    builder.add_node("competitor", competitor_node)
+    builder.add_node("consumer", consumer_node)
+    builder.add_node("report", report_node)
+
+    # Set entry point
+    builder.set_entry_point("market_trends")
+
+    # Add conditional edges
+    builder.add_conditional_edges(
+        "market_trends",
+        should_continue,
+        {
+            AgentType.COMPETITOR.value: "competitor",
+            END: END
         }
+    )
 
-class MarketTrendsAgent(BaseAgent):
-    """Agent specialized in analyzing market trends and industry dynamics."""
-
-    def __init__(self):
-        super().__init__(
-            MARKET_TRENDS_ROLE,
-            AgentType.MARKET_TRENDS.value,
-            AgentType.COMPETITOR.value
-        )
-
-class CompetitorAgent(BaseAgent):
-    """Agent specialized in analyzing competitors and their offerings."""
-
-    def __init__(self):
-        super().__init__(
-            COMPETITOR_ROLE,
-            AgentType.COMPETITOR.value,
-            AgentType.CONSUMER.value
-        )
-
-class ConsumerAgent(BaseAgent):
-    """Agent specialized in analyzing consumer behavior and preferences."""
-
-    def __init__(self):
-        super().__init__(
-            CONSUMER_ROLE,
-            AgentType.CONSUMER.value,
-            AgentType.REPORT.value
-        )
-
-class ReportAgent(BaseAgent):
-    """
-    Agent specialized in generating comprehensive market research reports
-    by synthesizing findings from other agents.
-    """
-
-    def __init__(self):
-        super().__init__(
-            REPORT_ROLE,
-            AgentType.REPORT.value,
-            AgentType.END.value
-        )
-
-    def process(self, state: AgentState) -> AgentState:
-        """
-        Generate a comprehensive report from all collected research data.
-
-        Args:
-            state (AgentState): Current state containing all research findings
-
-        Returns:
-            AgentState: Updated state including the final report
-        """
-        messages = state["messages"]
-        research_data = state["research_data"]
-
-        # Create a summary prompt that includes all findings
-        report_prompt = f"""
-        Based on the following research findings, generate a comprehensive market research report:
-
-        Market Trends:
-        {research_data.get('market_trends', {}).get('findings', 'No data available')}
-
-        Competitor Analysis:
-        {research_data.get('competitor', {}).get('findings', 'No data available')}
-
-        Consumer Insights:
-        {research_data.get('consumer', {}).get('findings', 'No data available')}
-
-        Format the report using markdown with clear sections and bullet points where appropriate.
-        """
-
-        messages.append(HumanMessage(content=report_prompt))
-
-        response = self.chain.invoke({
-            "role_description": self.role_description,
-            "research_context": json.dumps(research_data),
-            "previous_findings": json.dumps(research_data),
-            "messages": messages,
-            "query": report_prompt
-        })
-
-        return {
-            "messages": messages + [response],
-            "research_data": research_data,
-            "next_agent": self.next_agent,
-            "final_report": response.content
+    builder.add_conditional_edges(
+        "competitor",
+        should_continue,
+        {
+            AgentType.CONSUMER.value: "consumer",
+            END: END
         }
+    )
+
+    builder.add_conditional_edges(
+        "consumer",
+        should_continue,
+        {
+            AgentType.REPORT.value: "report",
+            END: END
+        }
+    )
+
+    builder.add_conditional_edges(
+        "report",
+        should_continue,
+        {END: END}
+    )
+
+    return builder.compile()

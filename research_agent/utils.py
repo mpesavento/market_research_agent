@@ -25,5 +25,5 @@ class AgentType(str, Enum):
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL_NAME = "gpt-4-turbo-preview"
+MODEL_NAME = "gpt-4o-mini"
 TEMPERATURE = 0
