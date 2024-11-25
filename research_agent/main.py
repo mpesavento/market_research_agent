@@ -119,9 +119,31 @@ def run_market_research(query: str):
     }
 
 if __name__ == "__main__":
-    query = """Conduct a comprehensive market analysis of wearable fitness trackers,
-    focusing on current trends, major competitors, and consumer preferences.
-    Pay special attention to emerging technologies and integration opportunities
-    with personalized wellness coaching systems."""
+    import argparse
+    import textwrap
+
+    parser = argparse.ArgumentParser(
+        description="Market Research Analysis Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""
+            Example usage:
+            python main.py "Analyze the market for wearable fitness trackers"
+
+            For complex queries, you can use multiple lines with triple quotes in a file:
+            python main.py --file query.txt
+        """)
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-f', '--file', help='Path to file containing the research query')
+    group.add_argument('query', nargs='?', help='Research query string')
+
+    args = parser.parse_args()
+
+    if args.file:
+        with open(args.file, 'r') as f:
+            query = f.read().strip()
+    else:
+        query = args.query
 
     run_market_research(query)

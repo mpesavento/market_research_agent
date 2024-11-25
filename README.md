@@ -1,14 +1,6 @@
-# research_agent
-multi agentic system that builds out an engine that will look up content and summarize it in a document
+# market_research_agent
+Multi agentic system that builds out an engine that will look up content and summarize it in a document
 
-
-Leverage Serper API for research
-
-What kind of research do we want to do?
-Competition research
-
-
-Want a product research expert and a senior copywriter.
 
 
 ## Set up
@@ -24,10 +16,47 @@ brew install wkhtmltopdf
 
 On Windows: Download the installer from [wkhtmltopdf downloads](https://wkhtmltopdf.org/downloads.html)
 
-```
-brew install wkhtmltopdf
+Create the python environment:
+```sh
+make create_environment
 ```
 
+Install the dependencies:
+```sh
+make requirements
 ```
-pip install -r requirements.txt
+
+Copy the `.env.template` file to `.env` and add your OpenAI API key and Tavily API key.
+```sh
+cp template.env .env
+```
+
+If you already have these API keys defined in your .bashrc/.zshrc, add them to the `.env` file.
+```sh
+echo 'OPENAI_API_KEY="$OPENAI_API_KEY"' >> .env
+echo 'TAVILY_API_KEY="$TAVILY_API_KEY"' >> .env
+```
+
+Or you can add them directly to the `.env` file:
+```sh
+echo 'OPENAI_API_KEY=<your-openai-api-key>' >> .env
+echo 'TAVILY_API_KEY=<your-tavily-api-key>' >> .env
+```
+
+
+
+
+## Run the program
+
+To run the program from CLI, use the following command:
+```sh
+python research_agent/main.py
+```
+This will run the default prompt defined in main.py.
+
+
+
+To run the Gradio interface, use the following command:
+```sh
+python research_agent/app.py
 ```
