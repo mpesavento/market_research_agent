@@ -14,14 +14,30 @@ from research_agent.agents import (
     market_trends_node, competitor_node,
     consumer_node, report_node, should_continue, MarketResearchState
 )
+from research_agent.storage import create_storage_backend, StorageBackend
 
 class MarketResearchOrchestrator:
     """Orchestrates multiple agents in a market research workflow"""
-    def __init__(self, reports_dir: str = "reports", status_callback: Optional[Callable] = None):
+    def __init__(
+        self,
+        storage_type: str = "local",
+        storage_config: Optional[dict] = None,
+        status_callback: Optional[Callable] = None
+    ):
+        """
+        Initialize the orchestrator
+
+        Args:
+            storage_type: Type of storage ("local" or "s3")
+            storage_config: Configuration for storage backend
+            status_callback: Optional callback for status updates
+        """
         self.graph = self._build_graph()
-        self.reports_dir = reports_dir
-        self.status_callback = status_callback or (lambda x: None)  # No-op if no callback provided
-        os.makedirs(reports_dir, exist_ok=True)
+        self.status_callback = status_callback or (lambda x: None)
+
+        # Initialize storage
+        storage_config = storage_config or {}
+        self.storage = create_storage_backend(storage_type, **storage_config)
 
     def _build_graph(self):
         """Internal method to build the workflow graph"""

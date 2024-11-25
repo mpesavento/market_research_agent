@@ -14,3 +14,6 @@ markdown
 tavily-python
 pytest
 pytest-mock
+boto3
+botocore
+urllib3

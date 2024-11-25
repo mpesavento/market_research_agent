@@ -78,7 +78,51 @@ def conduct_research(
     export_format: str = "markdown",
     progress=gr.Progress()
 ) -> tuple[str, str, str, str, str]:
-    """Conduct market research and return results."""
+    """
+    Conduct market research and return results with progress updates.
+
+    Args:
+        query (str): The primary research question or topic to analyze. Should be a clear,
+            specific request for market research (e.g., "Analyze the electric vehicle market in Europe").
+        analysis_depth (str): Level of detail for the analysis. Must be one of:
+            - "Basic": High-level overview
+            - "Detailed": Standard depth analysis
+            - "Comprehensive": In-depth analysis with extensive details
+        focus_areas (list): List of specific aspects to analyze. Valid options include:
+            - "Market Trends"
+            - "Competitor Analysis"
+            - "Consumer Behavior"
+            - "Technology Features"
+            - "Pricing Strategy"
+        export_format (str, optional): Format for the saved report. Defaults to "markdown".
+            Must be one of:
+            - "markdown": .md file with plain text formatting
+            - "html": Styled HTML document
+            - "pdf": PDF document with formatting (not yet implemented)
+        progress (gr.Progress, optional): Gradio progress bar instance for updating UI.
+            Automatically provided by Gradio.
+
+    Returns:
+        tuple[str, str, str, str, str]: A tuple containing:
+            - intermediate_findings: Markdown formatted string of findings from each specialized agent
+            - final_report: Synthesized final report text from the orchestrator
+            - file_path: Path to the saved report file in reports directory
+            - preview_content: HTML preview of the report (if format is html)
+            - error_message: Error description if any occurred, empty string otherwise
+
+    Raises:
+        ValueError: If query is empty or invalid
+        RuntimeError: If research workflow fails to generate a report
+        Exception: For other errors during research or report generation
+
+    Example:
+        >>> findings, report, path, preview, error = conduct_research(
+        ...     query="Analyze the electric vehicle market in Europe",
+        ...     analysis_depth="Detailed",
+        ...     focus_areas=["Market Trends", "Competitor Analysis"],
+        ...     export_format="markdown"
+        ... )
+    """
     try:
         # Format the enhanced query
         enhanced_query = enhance_query(query, analysis_depth, focus_areas)
