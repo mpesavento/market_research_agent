@@ -2,6 +2,35 @@ import gradio as gr
 from datetime import datetime
 import markdown
 from research_agent.workflow import create_market_research_orchestrator
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema import AgentAction
+from research_agent.utils import AgentStatus, PROGRESS_MAP
+from typing import Generator
+from queue import Queue
+from threading import Thread
+import os
+
+# class GradioCallbackHandler(BaseCallbackHandler):
+#     def __init__(self, gradio_progress_callback=None):
+#         self.gradio_progress_callback = gradio_progress_callback
+
+#     def on_agent_action(self, action, color="blue", **kwargs):
+#         if self.gradio_progress_callback:
+#             # Format the action message
+#             if isinstance(action, AgentAction):
+#                 message = f"🤖 Tool: {action.tool}\nInput: {action.tool_input}"
+#             else:
+#                 message = f"🤖 {action}"
+#             print(f"Gradio callback: {message}")
+#             self.gradio_progress_callback(message)
+
+#     def on_tool_start(self, tool_name, tool_input, **kwargs):
+#         if self.gradio_progress_callback:
+#             self.gradio_progress_callback(f"🔧 Starting tool: {tool_name}")
+
+#     def on_tool_end(self, output, **kwargs):
+#         if self.gradio_progress_callback:
+#             self.gradio_progress_callback(f"✅ Tool finished. Output: {output}")
 
 def enhance_query(query: str, depth: str, focus_areas: list) -> str:
     """Enhance the research query with depth and focus specifications."""
@@ -75,86 +104,85 @@ def conduct_research(
     query: str,
     analysis_depth: str,
     focus_areas: list,
-    export_format: str = "markdown",
-    progress=gr.Progress()
-) -> tuple[str, str, str, str, str]:
+    export_format: str = "markdown"
+) -> Generator[tuple, None, None]:
     """
-    Conduct market research and return results with progress updates.
-
-    Args:
-        query (str): The primary research question or topic to analyze. Should be a clear,
-            specific request for market research (e.g., "Analyze the electric vehicle market in Europe").
-        analysis_depth (str): Level of detail for the analysis. Must be one of:
-            - "Basic": High-level overview
-            - "Detailed": Standard depth analysis
-            - "Comprehensive": In-depth analysis with extensive details
-        focus_areas (list): List of specific aspects to analyze. Valid options include:
-            - "Market Trends"
-            - "Competitor Analysis"
-            - "Consumer Behavior"
-            - "Technology Features"
-            - "Pricing Strategy"
-        export_format (str, optional): Format for the saved report. Defaults to "markdown".
-            Must be one of:
-            - "markdown": .md file with plain text formatting
-            - "html": Styled HTML document
-            - "pdf": PDF document with formatting (not yet implemented)
-        progress (gr.Progress, optional): Gradio progress bar instance for updating UI.
-            Automatically provided by Gradio.
-
-    Returns:
-        tuple[str, str, str, str, str]: A tuple containing:
-            - intermediate_findings: Markdown formatted string of findings from each specialized agent
-            - final_report: Synthesized final report text from the orchestrator
-            - file_path: Path to the saved report file in reports directory
-            - preview_content: HTML preview of the report (if format is html)
-            - error_message: Error description if any occurred, empty string otherwise
-
-    Raises:
-        ValueError: If query is empty or invalid
-        RuntimeError: If research workflow fails to generate a report
-        Exception: For other errors during research or report generation
-
-    Example:
-        >>> findings, report, path, preview, error = conduct_research(
-        ...     query="Analyze the electric vehicle market in Europe",
-        ...     analysis_depth="Detailed",
-        ...     focus_areas=["Market Trends", "Competitor Analysis"],
-        ...     export_format="markdown"
-        ... )
+    Generator function to conduct market research and yield updates.
     """
+    status_queue = Queue()
+
     try:
-        # Format the enhanced query
         enhanced_query = enhance_query(query, analysis_depth, focus_areas)
 
-        # Create a status callback that updates the Gradio progress bar
         def status_callback(message: str):
-            # Map specific messages to progress percentages
-            progress_map = {
-                "Starting market research workflow...": 0.1,
-                "🔍 Analyzing market trends...": 0.2,
-                "🏢 Analyzing competitors...": 0.4,
-                "👥 Analyzing consumer behavior...": 0.6,
-                "📝 Generating final report...": 0.8,
-                "Saving research outputs...": 0.9,
-                "Research workflow complete!": 1.0
-            }
-            # Get progress value or default to current value
-            progress_value = progress_map.get(message, None)
-            if progress_value is not None:
-                progress(progress_value, desc=message)
+            """
+            Callback to update status and progress.
+            """
+            progress_value = PROGRESS_MAP.get(message, 0)
+            status_queue.put((message, progress_value))
 
-        # Create and run the research orchestrator with status updates
-        orchestrator = create_market_research_orchestrator(status_callback=status_callback)
-        result = orchestrator.run_research(enhanced_query)
+        # Create orchestrator with our status callback
+        orchestrator = create_market_research_orchestrator(
+            status_callback=status_callback
+        )
 
-        # Format intermediate findings from agent outputs
+        # Initial status
+        yield (
+            "",                # intermediate_output
+            "",                # final_report
+            "",                # file_path
+            "",                # error_message
+            AgentStatus.WAITING,  # status_display
+            0,                # progress_bar
+            ""             # download_btn
+        )
+
+        # Run orchestrator in a separate thread
+        def run_orchestrator():
+            nonlocal result
+            result = orchestrator.run_research(enhanced_query)
+            status_queue.put(None)  # Signal completion
+
+        result = None
+        thread = Thread(target=run_orchestrator)
+        thread.start()
+
+        # Process status updates as they come in
+        while True:
+            status_update = status_queue.get()
+            if status_update is None:  # Research complete
+                break
+
+            status_msg, progress_value = status_update
+            # Update the UI with the new status and progress
+            yield (
+                "",                # intermediate_output
+                "",                # final_report
+                "",                # file_path
+                "",                # error_message
+                status_msg,        # status_display
+                progress_value,    # progress_bar
+                ""             # download_btn
+            )
+
+        # Format intermediate findings
         intermediate_findings = ""
-        for agent_name, output in result["agent_outputs"].items():
+        for agent_name, output in result.get("agent_outputs", {}).items():
             if "findings" in output:
                 intermediate_findings += f"\n### {agent_name.replace('_', ' ').title()}\n"
                 intermediate_findings += output["findings"]
                 intermediate_findings += "\n---\n"
+
+        # Yield intermediate findings
+        yield (
+            intermediate_findings,  # intermediate_output
+            "",                    # final_report
+            "",                    # file_path
+            "",                    # error_message
+            "Processing findings...", # status_display
+            0.9,                   # progress_bar (90% complete)
+            ""                  # download_btn
+        )
 
         # Convert and save in requested format
         file_path, preview_content, error = save_report(
@@ -162,17 +190,38 @@ def conduct_research(
             export_format
         )
 
-        return (
-            intermediate_findings,
-            result["final_report"],
-            file_path or "",
-            preview_content or "",
-            error or ""
-        )
+        if error:
+            yield (
+                intermediate_findings,          # intermediate_output
+                result.get("final_report", ""), # final_report
+                "",                            # file_path
+                error,                         # error_message
+                f"⚠️ Error: {error}",          # status_display
+                0,                             # progress_bar (reset on error)
+                ""                          # download_btn
+            )
+        else:
+            yield (
+                intermediate_findings,          # intermediate_output
+                result.get("final_report", ""), # final_report
+                file_path,                     # file_path
+                "",                            # error_message
+                "✅ Research workflow complete!", # status_display
+                1.0,                           # progress_bar (100% complete)
+                "📥 Download Report"                           # download_btn
+            )
 
     except Exception as e:
         error_msg = f"Error during analysis: {str(e)}"
-        return "", "", "", "", error_msg
+        yield (
+            "",                # intermediate_output
+            "",                # final_report
+            "",                # file_path
+            error_msg,         # error_message
+            AgentStatus.WAITING, # status_display
+            0,                # progress_bar (reset on error)
+            ""             # download_btn
+        )
 
 def create_interface():
     """Create and configure the Gradio interface."""
@@ -295,35 +344,75 @@ def create_interface():
 
         with gr.Row():
             with gr.Column():
-                gr.Markdown("### Intermediate Findings", elem_classes="markdown-text")
+                gr.Markdown("🔄 Agent Status")
+                status_display = gr.Markdown(
+                    elem_classes="status-display",
+                    show_label=False,
+                    value=AgentStatus.WAITING
+                )
+                progress_bar = gr.Slider(
+                    minimum=0,
+                    maximum=1.0,
+                    value=0,
+                    label="Progress",
+                    interactive=False,
+                    elem_id="research-progress"
+                )
+
+
+        # Wrap intermediate findings in Accordion
+        with gr.Accordion("📋 Intermediate Findings", open=False):
+            with gr.Column(show_progress=False):
                 intermediate_output = gr.Markdown(
                     elem_classes="findings-section markdown-content",
-                    show_label=False
+                    show_label=False,
                 )
 
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### Final Report", elem_classes="markdown-text")
+        with gr.Accordion("🔍 Final Report", open=True):
+            with gr.Column(show_progress=False):
                 final_report = gr.Markdown(
                     elem_classes="output-panel markdown-content",
-                    show_label=False
+                    show_label=False,
                 )
 
         with gr.Row():
-            file_path = gr.Textbox(
-                label="Report Location",
-                show_label=True,
-                container=True
-            )
-            preview = gr.HTML(
-                label="Preview",
-                show_label=True
-            )
-            error_message = gr.Markdown(
-                elem_classes="error-message",
-                show_label=False
-            )
+            with gr.Column(scale=2, show_progress=False):
+                file_path = gr.Textbox(
+                    label="Report Location",
+                    show_label=True,
+                    container=True,
+                )
+            # Add download button
+            with gr.Column(scale=1):
+                download_btn = gr.Button(value="📥 Download Report", visible=True)
 
+                # Create the download component
+                file_output = gr.File(
+                    label="Download",
+                    interactive=False,
+                    visible=True,
+                )
+
+        def prepare_download(filepath: str) -> str:
+            """Prepare file for download if it exists."""
+            if filepath and filepath.strip() and os.path.exists(filepath):
+                return filepath
+            return None
+
+        # Update download button click handler
+        download_btn.click(
+            fn=prepare_download,
+            inputs=[file_path],
+            outputs=[file_output],
+            api_name="download_report"
+        )
+
+        error_message = gr.Markdown(
+            elem_classes="error-message",
+            show_label=False
+        )
+
+        # Update submit button click handler
         submit_btn.click(
             fn=conduct_research,
             inputs=[
@@ -336,12 +425,19 @@ def create_interface():
                 intermediate_output,
                 final_report,
                 file_path,
-                preview,
-                error_message
+                error_message,
+                status_display,
+                progress_bar,
+                download_btn
             ]
         )
+        # .then(  # Chain the enable_download function
+        #     fn=enable_download,
+        #     inputs=[file_path],
+        #     outputs=[download_btn]
+        # )
 
-    return interface
+    return interface.queue()
 
 if __name__ == "__main__":
     demo = create_interface()

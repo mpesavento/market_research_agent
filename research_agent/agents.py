@@ -10,7 +10,7 @@ import time
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
-from research_agent.utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE
+from research_agent.utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE, AgentStatus
 from research_agent.prompts import (
     BASE_PROMPT, MARKET_TRENDS_ROLE, COMPETITOR_ROLE,
     CONSUMER_ROLE, REPORT_ROLE
@@ -43,10 +43,8 @@ class SearchQueries(BaseModel):
 def market_trends_node(state: MarketResearchState):
     """Node for market trends research"""
     status_callback = state.get("_status_callback")
-    if status_callback is None:
-        print("DEBUG: No status callback in market_trends_node")
-    else:
-        status_callback("🔍 Starting Market Trends Analysis...")
+    if status_callback:
+        status_callback(AgentStatus.MARKET_TRENDS_START)
     start_time = time.time()
 
     queries = model.with_structured_output(SearchQueries).invoke([
@@ -79,7 +77,7 @@ def market_trends_node(state: MarketResearchState):
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
-        status_callback(f"✅ Market Trends Analysis complete (took {elapsed_time:.2f} seconds)")
+        status_callback(f"{AgentStatus.MARKET_TRENDS_COMPLETE} (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -92,7 +90,7 @@ def competitor_node(state: MarketResearchState):
     """Node for competitor analysis"""
     status_callback = state.get("_status_callback")
     if status_callback:
-        status_callback("🏢 Starting Competitor Analysis...")
+        status_callback(AgentStatus.COMPETITOR_START)
     start_time = time.time()
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=COMPETITOR_ROLE),
@@ -124,7 +122,7 @@ def competitor_node(state: MarketResearchState):
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
-        status_callback(f"✅ Competitor Analysis complete (took {elapsed_time:.2f} seconds)")
+        status_callback(f"{AgentStatus.COMPETITOR_COMPLETE} (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -137,7 +135,7 @@ def consumer_node(state: MarketResearchState):
     """Node for consumer analysis"""
     status_callback = state.get("_status_callback")
     if status_callback:
-        status_callback("👥 Starting Consumer Behavior Analysis...")
+        status_callback(AgentStatus.CONSUMER_START)
     start_time = time.time()
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=CONSUMER_ROLE),
@@ -169,7 +167,7 @@ def consumer_node(state: MarketResearchState):
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
-        status_callback(f"✅ Consumer Analysis complete (took {elapsed_time:.2f} seconds)")
+        status_callback(f"{AgentStatus.CONSUMER_COMPLETE} (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -182,7 +180,7 @@ def report_node(state: MarketResearchState):
     """Node for final report generation"""
     status_callback = state.get("_status_callback")
     if status_callback:
-        status_callback("📝 Starting Final Report Generation...")
+        status_callback(AgentStatus.REPORT_START)
     start_time = time.time()
     # Compile all research data
     market_trends = state['research_data'].get('market_trends', {}).get('findings', '')
@@ -212,7 +210,7 @@ Include key insights, recommendations, and potential opportunities."""
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
-        status_callback(f"✅ Final Report Generation complete (took {elapsed_time:.2f} seconds)")
+        status_callback(f"{AgentStatus.REPORT_COMPLETE} (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": state['research_data'],
