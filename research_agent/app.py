@@ -1,8 +1,6 @@
 # app.py
 import gradio as gr
 from langchain_core.messages import HumanMessage
-from utils import AgentType
-from workflow import MarketResearchWorkflow
 import time
 import markdown
 from datetime import datetime
@@ -11,6 +9,9 @@ from pathlib import Path
 import os
 import json
 from typing import Optional
+
+from workflow import build_research_graph, MarketResearchState
+
 
 def convert_to_html(markdown_text: str, include_style: bool = True) -> str:
     """Convert markdown to HTML with optional styling"""
@@ -144,38 +145,84 @@ def conduct_research(
         ...     export_format="pdf"
         ... )
     """
-    workflow = MarketResearchWorkflow()
-
-    enhanced_query = f"""{query}
-    Please provide a {analysis_depth} analysis focusing on: {', '.join(focus_areas)}.
-    """
-
-    initial_state = {
-        "messages": [HumanMessage(content=enhanced_query)],
-        "next_agent": "market_trends",
-        "research_data": {},
-        "final_report": None
-    }
-
-    intermediate_findings = []
-    final_report_text = ""
-    error_msg = None
-
     try:
-        for i, output in enumerate(workflow.run(initial_state)):
-            agent_name = output["next_agent"].replace("_", " ").title()
-            progress((i + 1)/4)
+        # Define depth expectations
+        depth_definitions = {
+            "Basic": """
+                - Provide a high-level overview of key points
+                - Focus on main trends and obvious market leaders
+                - Include essential statistics and basic market insights
+                - Typical length: 2-3 key points per focus area""",
+            "Detailed": """
+                - Provide in-depth analysis with specific examples
+                - Include relevant market statistics and data points
+                - Analyze both major and emerging players
+                - Compare and contrast different market segments
+                - Typical length: 4-6 detailed points per focus area""",
+            "Comprehensive": """
+                - Provide extensive analysis with detailed insights
+                - Include comprehensive market statistics and trend analysis
+                - Cover major players, emerging companies, and niche segments
+                - Analyze historical trends and future projections
+                - Include specific examples, case studies, and market data
+                - Typical length: 7+ detailed points per focus area"""
+        }
 
-            # Store intermediate findings
-            if "research_data" in output:
-                for agent, data in output["research_data"].items():
-                    if "findings" in data:
-                        intermediate_findings.append(f"### {agent.replace('_', ' ').title()}\n\n{data['findings']}\n\n---\n")
+        # Define focus area expectations
+        focus_area_definitions = {
+            "Market Trends": "Analysis of current market direction, growth patterns, emerging technologies, and shifting dynamics",
+            "Competitor Analysis": "Detailed review of major players, market share, competitive advantages, and strategic positioning",
+            "Consumer Behavior": "Understanding of customer preferences, buying patterns, demographic insights, and user needs",
+            "Technology Features": "Evaluation of current and emerging technologies, technical specifications, and innovation trends",
+            "Pricing Strategy": "Analysis of market pricing models, cost structures, value propositions, and pricing trends"
+        }
 
-            if output.get("final_report"):
-                final_report_text = output["final_report"]
-                progress(1.0)
-                break
+        # Format the enhanced query
+        enhanced_query = f"""Conduct a {analysis_depth.lower()} market analysis regarding: {query}
+
+Analysis Depth Requirements ({analysis_depth}):
+{depth_definitions[analysis_depth]}
+
+Focus Areas (provide detailed analysis for each):
+{chr(10).join(f'- {area}: {focus_area_definitions[area]}' for area in focus_areas)}
+
+Please structure your analysis to clearly address each focus area separately, maintaining the specified depth level throughout the report."""
+
+        graph = build_research_graph()
+        initial_state: MarketResearchState = {
+            "messages": [HumanMessage(content=enhanced_query)],
+            "research_data": {},
+            "next_agent": "market_trends",
+            "final_report": None
+        }
+
+        # Use a dictionary to store intermediate findings, keyed by agent name
+        intermediate_findings_dict = {}
+
+        for output in graph.stream(initial_state):
+            if isinstance(output, dict):
+                agent_name = next(iter(output))
+                agent_data = output[agent_name]
+
+                progress((len(intermediate_findings_dict) + 1)/4)
+
+                if isinstance(agent_data, dict) and "research_data" in agent_data:
+                    for data_agent, data in agent_data["research_data"].items():
+                        if "findings" in data:
+                            # Store/update findings in dictionary instead of appending to list
+                            intermediate_findings_dict[data_agent] = f"### {data_agent.replace('_', ' ').title()}\n\n{data['findings']}\n\n---\n"
+
+                if isinstance(agent_data, dict) and agent_data.get("final_report"):
+                    final_report_text = agent_data["final_report"]
+                    progress(1.0)
+                    break
+
+        # Convert dictionary to list in desired order (if order matters)
+        intermediate_findings = [
+            intermediate_findings_dict[agent]
+            for agent in ["market_trends", "competitor", "consumer"]
+            if agent in intermediate_findings_dict
+        ]
 
         # Combine all text into markdown
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -232,7 +279,41 @@ def create_interface():
         background-color: #f8f9fa;
     }
     .error-message { color: #dc3545; }
+
+    /* Info icon styling */
+    .info-icon {
+        display: inline-block;
+        margin-left: 5px;
+        color: #666;
+        cursor: help;
+    }
+
+    /* Tooltip container styling */
+    .gr-form > div[class*="row"] {
+        position: relative;
+    }
     """
+
+    # Define tooltips using our existing definitions
+    depth_tooltips = {
+        "Basic": "High-level overview with 2-3 key points per focus area",
+        "Detailed": "In-depth analysis with 4-6 detailed points per focus area",
+        "Comprehensive": "Extensive analysis with 7+ detailed points per focus area, including case studies"
+    }
+
+    focus_area_tooltips = {
+        "Market Trends": "Analysis of current market direction, growth patterns, emerging technologies, and shifting dynamics",
+        "Competitor Analysis": "Detailed review of major players, market share, competitive advantages, and strategic positioning",
+        "Consumer Behavior": "Understanding of customer preferences, buying patterns, demographic insights, and user needs",
+        "Technology Features": "Evaluation of current and emerging technologies, technical specifications, and innovation trends",
+        "Pricing Strategy": "Analysis of market pricing models, cost structures, value propositions, and pricing trends"
+    }
+
+    export_format_tooltips = {
+        "markdown": "Plain text format with basic formatting",
+        "html": "Web-friendly format with styling",
+        "pdf": "Professional document format suitable for printing"
+    }
 
     with gr.Blocks(
         title="Market Research Assistant",
@@ -249,14 +330,16 @@ def create_interface():
                 query = gr.Textbox(
                     label="Research Query",
                     placeholder="Enter your market research query here...",
-                    lines=3
+                    lines=3,
+                    info="Enter a specific market research question or topic to analyze"
                 )
 
                 with gr.Row():
                     analysis_depth = gr.Radio(
                         choices=["Basic", "Detailed", "Comprehensive"],
                         value="Detailed",
-                        label="Analysis Depth"
+                        label="Analysis Depth",
+                        info="\n".join(f"{k}: {v}" for k, v in depth_tooltips.items())
                     )
                     focus_areas = gr.CheckboxGroup(
                         choices=[
@@ -267,12 +350,14 @@ def create_interface():
                             "Pricing Strategy"
                         ],
                         value=["Market Trends", "Competitor Analysis"],
-                        label="Focus Areas"
+                        label="Focus Areas",
+                        info="\n".join(f"{k}: {v}" for k, v in focus_area_tooltips.items())
                     )
                     export_format = gr.Radio(
                         choices=["markdown", "html", "pdf"],
                         value="markdown",
-                        label="Export Format"
+                        label="Export Format",
+                        info="\n".join(f"{k}: {v}" for k, v in export_format_tooltips.items())
                     )
 
                 submit_btn = gr.Button("🔍 Generate Report", variant="primary")

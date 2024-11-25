@@ -9,3 +9,25 @@ Competition research
 
 
 Want a product research expert and a senior copywriter.
+
+
+## Set up
+You'll also need wkhtmltopdf installed on your system for PDF generation. You can install it:
+On Ubuntu/Debian:
+```
+sudo apt-get install -y wkhtmltopdf
+```
+On macOS:
+```
+brew install wkhtmltopdf
+```
+
+On Windows: Download the installer from [wkhtmltopdf downloads](https://wkhtmltopdf.org/downloads.html)
+
+```
+brew install wkhtmltopdf
+```
+
+```
+pip install -r requirements.txt
+```

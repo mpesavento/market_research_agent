@@ -8,13 +8,16 @@ python-dotenv
 aiosqlite
 pygments
 gradio
-streamlit
-flask
-flask-cors
-crewai==0.80.0
-crewai_tools
 markdown
 pdfkit
 # pygraphviz
+markdown
 # wkhtmltopdf-pack  # For PDF conversion
 tavily-python
+
+
+# streamlit
+# flask
+# flask-cors
+# crewai==0.80.0
+# crewai_tools
