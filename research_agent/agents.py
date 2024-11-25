@@ -9,8 +9,8 @@ import json
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
-from utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE
-from prompts import (
+from research_agent.utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE
+from research_agent.prompts import (
     BASE_PROMPT, MARKET_TRENDS_ROLE, COMPETITOR_ROLE,
     CONSUMER_ROLE, REPORT_ROLE
 )
@@ -22,7 +22,6 @@ from typing import TypedDict, List, Any
 from pydantic import BaseModel
 
 # Global tools setup
-# tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
 search_tool = TavilySearchResults(max_results=4)
 
 # Model definition
@@ -41,6 +40,8 @@ class SearchQueries(BaseModel):
 
 def market_trends_node(state: MarketResearchState):
     """Node for market trends research"""
+    status_callback = state.get("_status_callback", lambda x: None)
+    status_callback("🔍 Analyzing market trends...")
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=MARKET_TRENDS_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
@@ -77,6 +78,8 @@ def market_trends_node(state: MarketResearchState):
 
 def competitor_node(state: MarketResearchState):
     """Node for competitor analysis"""
+    status_callback = state.get("_status_callback", lambda x: None)
+    status_callback("🏢 Analyzing competitors...")
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=COMPETITOR_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
@@ -113,6 +116,8 @@ def competitor_node(state: MarketResearchState):
 
 def consumer_node(state: MarketResearchState):
     """Node for consumer analysis"""
+    status_callback = state.get("_status_callback", lambda x: None)
+    status_callback("👥 Analyzing consumer behavior...")
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=CONSUMER_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze consumer behavior")
@@ -149,6 +154,8 @@ def consumer_node(state: MarketResearchState):
 
 def report_node(state: MarketResearchState):
     """Node for final report generation"""
+    status_callback = state.get("_status_callback", lambda x: None)
+    status_callback("📝 Generating final report...")
     # Compile all research data
     market_trends = state['research_data'].get('market_trends', {}).get('findings', '')
     competitor_analysis = state['research_data'].get('competitor', {}).get('findings', '')

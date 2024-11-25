@@ -18,28 +18,6 @@ endif
 # COMMANDS                                                                      #
 #################################################################################
 
-
-
-## Install Python Dependencies
-requirements:
-	$(PYTHON_INTERPRETER) -m pip install -U pip setuptools wheel
-	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
-# pip install -e .
-
-
-## Delete all compiled Python files
-clean:
-	find . -type f -name "*.py[co]" -delete
-	find . -type d -name "__pycache__" -delete
-
-## Lint using flake8
-lint:
-	flake8 src
-
-test:
-	pytest -v -o asyncio_mode=auto --disable-warnings tests/
-
-
 ## Set up python interpreter environment
 create_environment:
 ifeq (True,$(HAS_CONDA))
@@ -57,6 +35,34 @@ else
 	@bash -c "source `which virtualenvwrapper.sh`;mkvirtualenv $(PROJECT_NAME) --python=$(PYTHON_INTERPRETER)"
 	@echo ">>> New virtualenv created. Activate with:\nworkon $(PROJECT_NAME)"
 endif
+
+
+## Install Python Dependencies
+requirements:
+	$(PYTHON_INTERPRETER) -m pip install -U pip setuptools wheel
+	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
+	$(PYTHON_INTERPRETER) -m pip install -e .
+
+
+## Delete all compiled Python files
+clean:
+	find . -type f -name "*.py[co]" -delete
+	find . -type d -name "__pycache__" -delete
+
+## Lint using flake8
+lint:
+	flake8 src
+
+.PHONY: test test-integration
+
+# Run all tests except integration tests
+test:
+	pytest tests/ -v -m "not integration"
+
+# Run integration tests
+test-integration:
+	pytest tests/ -v -m "integration"
+
 
 
 #################################################################################
