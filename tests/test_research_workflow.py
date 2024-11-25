@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import Mock, patch
+from pathlib import Path
 from research_agent.workflow import create_market_research_orchestrator
-from research_agent.agents import MarketResearchState
+from research_agent.storage import LocalStorageBackend
 from langchain_core.messages import AIMessage
 
 # Mock responses for different agents
@@ -33,14 +34,33 @@ def mock_search_tool():
         ]
         yield mock_tool
 
-# Unit Tests (will run in both CI and local)
+@pytest.fixture
+def test_storage_dir(tmp_path):
+    """Create a temporary directory for test storage"""
+    storage_dir = tmp_path / "test_reports"
+    storage_dir.mkdir(exist_ok=True)
+    return storage_dir
+
+# Unit Tests
 @pytest.mark.unit
 class TestMarketResearchUnit:
-    def test_orchestrator_initialization(self):
+    def test_orchestrator_initialization(self, test_storage_dir):
         """Test basic orchestrator initialization"""
+        orchestrator = create_market_research_orchestrator(
+            storage_type="local",
+            storage_config={"base_dir": str(test_storage_dir)}
+        )
+        assert orchestrator is not None
+        assert isinstance(orchestrator.storage, LocalStorageBackend)
+        assert orchestrator.storage.base_dir == Path(test_storage_dir)
+        assert orchestrator.storage.base_dir.exists()
+
+    def test_default_orchestrator_initialization(self):
+        """Test orchestrator initialization with default settings"""
         orchestrator = create_market_research_orchestrator()
         assert orchestrator is not None
-        assert orchestrator.reports_dir == "reports"
+        assert isinstance(orchestrator.storage, LocalStorageBackend)
+        assert orchestrator.storage.base_dir == Path("reports")
 
     def test_empty_query_validation(self):
         """Test that empty queries are rejected"""
@@ -48,15 +68,21 @@ class TestMarketResearchUnit:
         with pytest.raises(ValueError, match="Query cannot be empty"):
             orchestrator.run_research("")
 
-# Integration Tests (will only run when integration marker is enabled)
+# Integration Tests
 @pytest.mark.integration
 class TestMarketResearchIntegration:
-    def test_full_research_workflow(self, mock_llm_responses, mock_search_tool, tmp_path):
+    def test_full_research_workflow(
+        self,
+        mock_llm_responses,
+        mock_search_tool,
+        test_storage_dir
+    ):
         """Test the complete research workflow with mocked external dependencies"""
-        # Setup
-        reports_dir = tmp_path / "reports"
-        orchestrator = create_market_research_orchestrator()
-        orchestrator.reports_dir = str(reports_dir)
+        # Setup orchestrator with local storage
+        orchestrator = create_market_research_orchestrator(
+            storage_type="local",
+            storage_config={"base_dir": str(test_storage_dir)}
+        )
 
         # Mock specific responses for different stages
         def mock_invoke_side_effect(messages):
@@ -78,21 +104,29 @@ class TestMarketResearchIntegration:
         # Assertions
         assert result["final_report"] is not None
         assert isinstance(result["final_report"], str)
-        assert result["report_path"].endswith(".txt")
-        assert result["findings_path"].endswith(".txt")
+        assert "report_info" in result
+        assert "path" in result["report_info"]
+        assert "access_path" in result["report_info"]
+        assert Path(result["report_info"]["path"]).exists()
+        assert "findings_info" in result
+        assert Path(result["findings_info"]["path"]).exists()
         assert isinstance(result["agent_outputs"], dict)
 
-        # Verify files were created
-        assert reports_dir.exists()
-        assert len(list(reports_dir.glob("*.txt"))) == 2  # Should have report and findings files
+        # Verify files were created in the test directory
+        assert test_storage_dir.exists()
+        assert len(list(test_storage_dir.glob("*.txt"))) == 2  # Should have report and findings files
 
-    def test_status_callback_integration(self):
+    def test_status_callback_integration(self, test_storage_dir):
         """Test that status callbacks are properly called"""
         status_updates = []
         def status_callback(message):
             status_updates.append(message)
 
-        orchestrator = create_market_research_orchestrator(status_callback=status_callback)
+        orchestrator = create_market_research_orchestrator(
+            storage_type="local",
+            storage_config={"base_dir": str(test_storage_dir)},
+            status_callback=status_callback
+        )
 
         with patch('research_agent.agents.model') as mock_model, \
              patch('research_agent.agents.search_tool') as mock_search:
@@ -106,5 +140,31 @@ class TestMarketResearchIntegration:
 
         # Verify status updates were received
         assert len(status_updates) > 0
-        assert "Starting market research workflow..." in status_updates
-        assert "Research workflow complete!" in status_updates
+
+        # Check for key workflow stages
+        expected_prefixes = [
+            "🔄 Starting market research workflow",
+            "🔄 Executing research workflow",
+            "🔍 Starting Market Trends Analysis",
+            "✅ Market Trends Analysis complete",
+            "🏢 Starting Competitor Analysis",
+            "✅ Competitor Analysis complete",
+            "👥 Starting Consumer Behavior Analysis",
+            "✅ Consumer Analysis complete",
+            "📝 Starting Final Report Generation",
+            "✅ Final Report Generation complete",
+            "💾 Saving research outputs",
+            "✅ Research workflow complete"
+        ]
+
+        # Check that each expected prefix appears in the updates
+        for prefix in expected_prefixes:
+            matching_updates = [update for update in status_updates if update.startswith(prefix)]
+            assert matching_updates, f"Missing status update starting with: {prefix}"
+
+        # Print status updates for debugging if test fails
+        if not all(any(update.startswith(prefix) for update in status_updates)
+                  for prefix in expected_prefixes):
+            print("\nActual status updates received:")
+            for update in status_updates:
+                print(f"  {update}")

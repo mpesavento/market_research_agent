@@ -47,7 +47,11 @@ class StorageBackend(ABC):
 class LocalStorageBackend(StorageBackend):
     """Local filesystem storage implementation"""
     def __init__(self, base_dir: str = "reports"):
-        self.base_dir = Path(base_dir)
+        # Get the repository root directory (where research_agent package is)
+        repo_root = Path(__file__).parent.parent
+
+        # Create absolute path for reports directory
+        self.base_dir = repo_root / base_dir
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def save_file(self, content: str, filename: str) -> str:

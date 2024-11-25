@@ -54,6 +54,11 @@ python research_agent/main.py
 ```
 This will run the default prompt defined in main.py.
 
+You can also specify a custom reports directory:
+```sh
+python research_agent/main.py --reports-dir <path-to-reports-dir>
+```
+
 
 
 To run the Gradio interface, use the following command:

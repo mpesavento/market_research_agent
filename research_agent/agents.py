@@ -6,6 +6,7 @@ Includes base agent class and specialized agents for different aspects of market
 import os
 from datetime import datetime
 import json
+import time
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
@@ -18,7 +19,7 @@ from research_agent.prompts import (
 from langchain_community.tools.tavily_search import TavilySearchResults
 from tavily import TavilyClient
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, List, Any
+from typing import TypedDict, List, Any, Optional, Callable
 from pydantic import BaseModel
 
 # Global tools setup
@@ -33,6 +34,7 @@ class MarketResearchState(TypedDict):
     research_data: dict
     next_agent: str
     final_report: str | None
+    _status_callback: Optional[Callable]
 
 class SearchQueries(BaseModel):
     """Model for structured search queries"""
@@ -40,8 +42,13 @@ class SearchQueries(BaseModel):
 
 def market_trends_node(state: MarketResearchState):
     """Node for market trends research"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("🔍 Analyzing market trends...")
+    status_callback = state.get("_status_callback")
+    if status_callback is None:
+        print("DEBUG: No status callback in market_trends_node")
+    else:
+        status_callback("🔍 Starting Market Trends Analysis...")
+    start_time = time.time()
+
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=MARKET_TRENDS_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
@@ -69,17 +76,24 @@ def market_trends_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    if status_callback:
+        status_callback(f"✅ Market Trends Analysis complete (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
         "next_agent": "competitor",
-        "final_report": None
+        "final_report": None,
+        "_status_callback": status_callback
     }
 
 def competitor_node(state: MarketResearchState):
     """Node for competitor analysis"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("🏢 Analyzing competitors...")
+    status_callback = state.get("_status_callback")
+    if status_callback:
+        status_callback("🏢 Starting Competitor Analysis...")
+    start_time = time.time()
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=COMPETITOR_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
@@ -107,17 +121,24 @@ def competitor_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    if status_callback:
+        status_callback(f"✅ Competitor Analysis complete (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
         "next_agent": "consumer",
-        "final_report": None
+        "final_report": None,
+        "_status_callback": status_callback
     }
 
 def consumer_node(state: MarketResearchState):
     """Node for consumer analysis"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("👥 Analyzing consumer behavior...")
+    status_callback = state.get("_status_callback")
+    if status_callback:
+        status_callback("👥 Starting Consumer Behavior Analysis...")
+    start_time = time.time()
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=CONSUMER_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze consumer behavior")
@@ -145,17 +166,24 @@ def consumer_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    if status_callback:
+        status_callback(f"✅ Consumer Analysis complete (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
         "next_agent": "report",
-        "final_report": None
+        "final_report": None,
+        "_status_callback": status_callback
     }
 
 def report_node(state: MarketResearchState):
     """Node for final report generation"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("📝 Generating final report...")
+    status_callback = state.get("_status_callback")
+    if status_callback:
+        status_callback("📝 Starting Final Report Generation...")
+    start_time = time.time()
     # Compile all research data
     market_trends = state['research_data'].get('market_trends', {}).get('findings', '')
     competitor_analysis = state['research_data'].get('competitor', {}).get('findings', '')
@@ -181,11 +209,16 @@ Include key insights, recommendations, and potential opportunities."""
         HumanMessage(content=report_prompt)
     ])
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    if status_callback:
+        status_callback(f"✅ Final Report Generation complete (took {elapsed_time:.2f} seconds)")
     return {
         "messages": state['messages'] + [response],
         "research_data": state['research_data'],
         "next_agent": END,
-        "final_report": response.content
+        "final_report": response.content,
+        "_status_callback": status_callback
     }
 
 def should_continue(state: MarketResearchState):

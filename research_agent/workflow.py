@@ -3,12 +3,11 @@
 Workflow implementation for coordinating market research agents.
 Defines the execution graph and manages agent interactions.
 """
-
-from typing import TypedDict, List, Dict, Optional, Callable
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import AnyMessage
-import os
 from datetime import datetime
+import time
+from typing import TypedDict, List, Dict, Optional, Callable, Any
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import AnyMessage, HumanMessage
 
 from research_agent.agents import (
     market_trends_node, competitor_node,
@@ -88,106 +87,148 @@ class MarketResearchOrchestrator:
 
         return builder.compile()
 
-    def run_research(self, query: str) -> Dict[str, str]:
+    def _save_final_report(self, report: str, query: str, timestamp: str) -> dict:
         """
-        Orchestrate the research workflow across multiple specialized agents
-
-        Args:
-            query: The research query to analyze
+        Save the final report using the storage backend
 
         Returns:
-            Dict containing:
-                - final_report: The synthesized research report
-                - report_path: Path to saved report file
-                - findings_path: Path to saved intermediate findings file
-                - agent_outputs: Dict of each specialized agent's findings
+            dict: Contains file info including path and access URL
         """
-        query = query.strip()
-        if not query:
-            raise ValueError("Query cannot be empty")
-
-        self.status_callback("Starting market research workflow...")
-
-        # Initialize the state
-        initial_state = {
-            "query": query,
-            "messages": [],
-            "research_data": {},
-            "final_report": "",
-            "agent_outputs": {},
-            "_status_callback": self.status_callback  # Pass callback to graph
-        }
-
-        # Run the graph
-        self.status_callback("Executing research workflow...")
-        final_state = self.graph.invoke(initial_state)
-
-        if not final_state.get("final_report"):
-            raise RuntimeError("Research failed to generate a report")
-
-        # Save reports
-        self.status_callback("Saving research outputs...")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_path = self._save_final_report(
-            final_state["final_report"],
-            query,
-            timestamp
-        )
-        findings_path = self._save_intermediate_findings(
-            final_state.get("research_data", {}),
-            query,
-            timestamp
+        filename = f"market_research_report_{timestamp}.txt"
+        content = (
+            "=== Market Research Report ===\n\n"
+            f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Query: {query}\n\n"
+            + "-" * 50 + "\n\n"
+            f"{report}\n\n"
+            + "-" * 50 + "\n"
         )
 
-        self.status_callback("Research workflow complete!")
+        file_path = self.storage.save_file(content, filename)
+        access_path = self.storage.get_file_url(filename)
 
         return {
-            "final_report": final_state["final_report"],
-            "report_path": report_path,
-            "findings_path": findings_path,
-            "agent_outputs": final_state.get("research_data", {})
+            "filename": filename,
+            "path": file_path,
+            "access_path": access_path
         }
-
-    def _save_final_report(self, report: str, query: str, timestamp: str) -> str:
-        """Save the final report to a file"""
-        report_file = os.path.join(self.reports_dir, f"market_research_report_{timestamp}.txt")
-        with open(report_file, "w", encoding="utf-8") as f:
-            f.write("=== Market Research Report ===\n\n")
-            f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Query: {query}\n\n")
-            f.write("-" * 50 + "\n\n")
-            f.write(report)
-            f.write("\n\n" + "-" * 50 + "\n")
-        return report_file
 
     def _save_intermediate_findings(
         self,
         findings: Dict,
         query: str,
         timestamp: str
-    ) -> Optional[str]:
-        """Save intermediate findings to a file"""
+    ) -> Optional[dict]:
+        """
+        Save intermediate findings using the storage backend
+
+        Returns:
+            Optional[dict]: File info if findings were saved, None otherwise
+        """
         if not findings:
             return None
 
-        findings_file = os.path.join(self.reports_dir, f"intermediate_findings_{timestamp}.txt")
-        with open(findings_file, "w", encoding="utf-8") as f:
-            f.write("=== Market Research Intermediate Findings ===\n\n")
-            f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Query: {query}\n\n")
+        filename = f"intermediate_findings_{timestamp}.txt"
+        content = (
+            "=== Market Research Intermediate Findings ===\n\n"
+            f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Query: {query}\n\n"
+        )
 
-            for agent, data in findings.items():
-                if "findings" in data:
-                    f.write(f"\n=== {agent.replace('_', ' ').title()} ===\n")
-                    f.write(data["findings"])
-                    f.write("\n" + "-" * 50 + "\n")
-        return findings_file
+        for agent, data in findings.items():
+            if "findings" in data:
+                content += f"\n=== {agent.replace('_', ' ').title()} ===\n"
+                content += data["findings"]
+                content += "\n" + "-" * 50 + "\n"
 
-def create_market_research_orchestrator(status_callback: Optional[Callable] = None) -> MarketResearchOrchestrator:
+        file_path = self.storage.save_file(content, filename)
+        access_path = self.storage.get_file_url(filename)
+
+        return {
+            "filename": filename,
+            "path": file_path,
+            "access_path": access_path
+        }
+
+    def run_research(self, query: str) -> Dict[str, Any]:
+        """
+        Orchestrate the research workflow across multiple specialized agents
+        """
+        query = query.strip()
+        if not query:
+            raise ValueError("Query cannot be empty")
+
+        self.status_callback("🔄 Starting market research workflow...")
+
+        # Initialize the state with the callback
+        initial_state = {
+            "query": query,
+            "messages": [HumanMessage(content=query)],  # Initialize with the query
+            "research_data": {},
+            "final_report": "",
+            "agent_outputs": {},
+            "_status_callback": self.status_callback,  # Ensure callback is included
+            "next_agent": "market_trends"  # Set initial agent
+        }
+
+        # Run the graph
+        self.status_callback("🔄 Executing research workflow...")
+        start_time = time.time()
+        try:
+            final_state = self.graph.invoke(initial_state)
+        except Exception as e:
+            self.status_callback(f"\n❌ Error during workflow execution: {str(e)}")
+            raise
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        self.status_callback(f"✅ Research workflow complete (took {elapsed_time:.2f} seconds)")
+
+        if not final_state.get("final_report"):
+            raise RuntimeError("Research failed to generate a report")
+
+        # Save reports
+        self.status_callback("💾 Saving research outputs...")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        report_info = self._save_final_report(
+            final_state["final_report"],
+            query,
+            timestamp
+        )
+
+        findings_info = self._save_intermediate_findings(
+            final_state.get("research_data", {}),
+            query,
+            timestamp
+        )
+
+        self.status_callback("✅ Research workflow complete!")
+
+        return {
+            "final_report": final_state["final_report"],
+            "report_info": report_info,
+            "findings_info": findings_info,
+            "agent_outputs": final_state.get("research_data", {})
+        }
+
+def create_market_research_orchestrator(
+    storage_type: str = "local",
+    storage_config: Optional[dict] = None,
+    status_callback: Optional[Callable] = None
+) -> MarketResearchOrchestrator:
     """
-    Create the market research agent with workflow graph.
+    Create the market research orchestrator
+
+    Args:
+        storage_type: Type of storage ("local" or "s3")
+        storage_config: Configuration for storage backend
+        status_callback: Optional callback for status updates
 
     Returns:
-        MarketResearchOrchestrator: Configured market research agent
+        MarketResearchOrchestrator: Configured orchestrator
     """
-    return MarketResearchOrchestrator(status_callback=status_callback)
+    return MarketResearchOrchestrator(
+        storage_type=storage_type,
+        storage_config=storage_config,
+        status_callback=status_callback
+    )

@@ -5,72 +5,106 @@ Provides interface for running market research analysis.
 """
 
 import sys
-import time
 import argparse
-import textwrap
+from pathlib import Path
+from typing import Optional
 from research_agent.workflow import create_market_research_orchestrator
 
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="Market Research Agent CLI")
+    parser.add_argument(
+        "--reports-dir",
+        type=str,
+        help="Directory to store reports (default: repository's reports folder)",
+        default=None
+    )
+    return parser.parse_args()
+
 def print_status(message: str):
-    """Print status message with timestamp."""
-    print(f"\r{message}", file=sys.stderr)
-    sys.stderr.flush()
+    """Print a status update with emoji indicators"""
+    print(f"\n{message}")
+
+def run_research(query: str, reports_dir: Optional[str] = None) -> Optional[dict]:
+    """
+    Run the market research workflow
+
+    Args:
+        query: Research query to analyze
+        reports_dir: Optional directory to store reports
+
+    Returns:
+        Optional[dict]: Research results if successful, None if failed
+    """
+    try:
+        storage_config = {"base_dir": reports_dir} if reports_dir else {}
+
+        # Initialize orchestrator with status callback
+        orchestrator = create_market_research_orchestrator(
+            storage_type="local",
+            storage_config=storage_config,
+            status_callback=print_status
+        )
+
+        # Run research
+        return orchestrator.run_research(query)
+
+    except Exception as e:
+        print(f"\n❌ Error during research: {str(e)}")
+        return None
+
+def print_results(results: dict):
+    """
+    Print research results in a formatted way
+
+    Args:
+        results: Dictionary containing research results
+    """
+    print("\n📊 Research Results")
+    print("=" * 80)
+    print(results["final_report"])
+    print("=" * 80)
+
+    print("\n📁 Generated Files:")
+    print(f"- Report: {results['report_info']['path']}")
+    if results.get('findings_info'):
+        print(f"- Findings: {results['findings_info']['path']}")
 
 def main():
-    """Run the market research CLI."""
-    parser = argparse.ArgumentParser(
-        description="Market Research Analysis Tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""
-            Example usage:
-            python main.py "Analyze the market for wearable fitness trackers"
+    """Main entry point for the market research CLI"""
+    try:
+        args = parse_args()
 
-            For complex queries, you can use multiple lines with triple quotes in a file:
-            python main.py --file query.txt
-        """)
-    )
-
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-f', '--file', help='Path to file containing the research query')
-    group.add_argument('query', nargs='?', help='Research query string')
-
-    # args = parser.parse_args()
-
-    # # Get query from file or command line
-    # if args.file:
-    #     with open(args.file, 'r') as f:
-    #         query = f.read().strip()
-    # else:
-    #     query = args.query
-
-
-    query = """Conduct a comprehensive market analysis of wearable fitness trackers,
+        # Get user input
+        query = """Conduct a comprehensive market analysis of wearable fitness trackers,
 focusing on current trends, major competitors, and consumer preferences.
 Pay special attention to emerging technologies and integration opportunities
 with personalized wellness coaching systems."""
+        print("Using query:")
+        print('---')
+        print(query)
+        print('---')
+        # query = input("\n🔍 Enter your market research query: ").strip()
+        if not query:
+            print("\n❌ Query cannot be empty")
+            return 1
 
-    print("\nMarket Research Analysis")
-    print("=" * 80)
-    # Run the research
-    try:
-        orchestrator = create_market_research_orchestrator(status_callback=print_status)
-        start_time = time.time()
-        result = orchestrator.run_research(query)
-        end_time = time.time()
-        print(f"\nResearch completed in {end_time - start_time:.2f} seconds")
+        print("\n🚀 Starting market research process...")
 
-        print("\nMarket Research Report:")
-        print("=" * 80)
-        print(result["final_report"])
-        print("=" * 80)
-        print(f"\nReport saved to: {result['report_path']}")
-        if result.get('findings_path'):
-            print(f"Intermediate findings saved to: {result['findings_path']}")
+        # Run research with optional custom reports directory
+        results = run_research(query, args.reports_dir)
+        if not results:
+            return 1
 
-    except Exception as e:
-        print(f"Error running market research: {str(e)}")
+        # Print results
+        print_results(results)
+        print("\n✨ Market research complete!")
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Research interrupted by user")
         return 1
 
     return 0
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
