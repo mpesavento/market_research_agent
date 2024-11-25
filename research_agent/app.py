@@ -441,4 +441,12 @@ def create_interface():
 
 if __name__ == "__main__":
     demo = create_interface()
-    demo.launch(share=True)
+    environment = os.environ.get("ENV", "DEV")
+    if environment == "PROD":
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=int(os.environ.get("PORT", 7860)),
+            share=False
+        )
+    else:
+        demo.launch(share=True)
