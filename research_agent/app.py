@@ -2,6 +2,7 @@ import gradio as gr
 from datetime import datetime
 import markdown
 from research_agent.workflow import create_market_research_orchestrator
+from research_agent.utils import AgentStatus, PROGRESS_MAP
 
 def enhance_query(query: str, depth: str, focus_areas: list) -> str:
     """Enhance the research query with depth and focus specifications."""
@@ -85,20 +86,13 @@ def conduct_research(
 
         # Create a status callback that updates the Gradio progress bar
         def status_callback(message: str):
-            # Map specific messages to progress percentages
-            progress_map = {
-                "Starting market research workflow...": 0.1,
-                "🔍 Analyzing market trends...": 0.2,
-                "🏢 Analyzing competitors...": 0.4,
-                "👥 Analyzing consumer behavior...": 0.6,
-                "📝 Generating final report...": 0.8,
-                "Saving research outputs...": 0.9,
-                "Research workflow complete!": 1.0
-            }
-            # Get progress value or default to current value
-            progress_value = progress_map.get(message, None)
+            # Get progress value from PROGRESS_MAP or keep current value
+            progress_value = PROGRESS_MAP.get(message, None)
             if progress_value is not None:
                 progress(progress_value, desc=message)
+            # For completion messages that might not be in PROGRESS_MAP
+            elif message.endswith("complete"):
+                progress(1.0, desc=message)
 
         # Create and run the research orchestrator with status updates
         orchestrator = create_market_research_orchestrator(status_callback=status_callback)
@@ -248,37 +242,55 @@ def create_interface():
                     )
 
                 submit_btn = gr.Button("🔍 Generate Report", variant="primary", size="lg")
-
         with gr.Row():
             with gr.Column():
-                gr.Markdown("### Intermediate Findings", elem_classes="markdown-text")
+                gr.Markdown("🔄 Agent Status")
+                status_display = gr.Markdown(
+                    elem_classes="status-display",
+                    show_label=False,
+                    value=AgentStatus.WAITING
+                )
+        # Wrap intermediate findings in Accordion
+        with gr.Accordion("📋 Intermediate Findings", open=False):
+            with gr.Column(show_progress=False):
                 intermediate_output = gr.Markdown(
                     elem_classes="findings-section markdown-content",
-                    show_label=False
+                    show_label=False,
                 )
 
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### Final Report", elem_classes="markdown-text")
+        with gr.Accordion("🔍 Final Report", open=True):
+            with gr.Column(show_progress=False):
                 final_report = gr.Markdown(
                     elem_classes="output-panel markdown-content",
-                    show_label=False
+                    show_label=False,
                 )
 
         with gr.Row():
-            file_path = gr.Textbox(
-                label="Report Location",
-                show_label=True,
-                container=True
-            )
-            preview = gr.HTML(
-                label="Preview",
-                show_label=True
-            )
-            error_message = gr.Markdown(
-                elem_classes="error-message",
-                show_label=False
-            )
+            with gr.Column(scale=1,show_progress=False):
+                file_path = gr.Textbox(
+                    label="Report Location",
+                    show_label=True,
+                    container=True
+                )
+                # Add download button
+            with gr.Column(scale=1, show_progress=False):
+                download_btn = gr.Button(value="📥 Download Report", visible=True)
+
+                # Create the download component
+                file_output = gr.File(
+                    label="Download",
+                    interactive=False,
+                    visible=True,
+                )
+                preview = gr.HTML(
+                    label="Preview",
+                    show_label=True,
+                    visible=False,
+                )
+                error_message = gr.Markdown(
+                    elem_classes="error-message",
+                    show_label=False
+                )
 
         submit_btn.click(
             fn=conduct_research,

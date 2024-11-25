@@ -12,8 +12,7 @@ from research_agent.workflow import create_market_research_orchestrator
 
 def print_status(message: str):
     """Print status message with timestamp."""
-    print(f"\r{message}", file=sys.stderr)
-    sys.stderr.flush()
+    print(f"{message}", flush=True)
 
 def main():
     """Run the market research CLI."""
@@ -33,20 +32,16 @@ def main():
     group.add_argument('-f', '--file', help='Path to file containing the research query')
     group.add_argument('query', nargs='?', help='Research query string')
 
-    # args = parser.parse_args()
+    args = parser.parse_args()
 
-    # # Get query from file or command line
-    # if args.file:
-    #     with open(args.file, 'r') as f:
-    #         query = f.read().strip()
-    # else:
-    #     query = args.query
+    # Get query from file or command line
+    if args.file:
+        with open(args.file, 'r') as f:
+            query = f.read().strip()
+    else:
+        query = args.query
 
-
-    query = """Conduct a comprehensive market analysis of wearable fitness trackers,
-focusing on current trends, major competitors, and consumer preferences.
-Pay special attention to emerging technologies and integration opportunities
-with personalized wellness coaching systems."""
+    print(f"\nQuery: {query}\n")
 
     print("\nMarket Research Analysis")
     print("=" * 80)

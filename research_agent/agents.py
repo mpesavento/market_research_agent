@@ -5,11 +5,12 @@ Includes base agent class and specialized agents for different aspects of market
 """
 import os
 from datetime import datetime
+import time
 import json
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
-from research_agent.utils import AgentState, AgentType, MODEL_NAME, TEMPERATURE
+from research_agent.utils import AgentType, MODEL_NAME, TEMPERATURE, AgentStatus
 from research_agent.prompts import (
     BASE_PROMPT, MARKET_TRENDS_ROLE, COMPETITOR_ROLE,
     CONSUMER_ROLE, REPORT_ROLE
@@ -38,10 +39,12 @@ class SearchQueries(BaseModel):
     """Model for structured search queries"""
     queries: List[str]
 
+
 def market_trends_node(state: MarketResearchState):
     """Node for market trends research"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("🔍 Analyzing market trends...")
+    status_callback = state.get("_status_callback") or print
+    start_time = time.time()
+    status_callback(AgentStatus.MARKET_TRENDS_START)
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=MARKET_TRENDS_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
@@ -69,6 +72,8 @@ def market_trends_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    elapsed = time.time() - start_time
+    status_callback(f"{AgentStatus.MARKET_TRENDS_COMPLETE} (took {elapsed:.1f}s)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -78,8 +83,9 @@ def market_trends_node(state: MarketResearchState):
 
 def competitor_node(state: MarketResearchState):
     """Node for competitor analysis"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("🏢 Analyzing competitors...")
+    status_callback = state.get("_status_callback") or print
+    start_time = time.time()
+    status_callback(AgentStatus.COMPETITOR_START)
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=COMPETITOR_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
@@ -107,6 +113,8 @@ def competitor_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    elapsed = time.time() - start_time
+    status_callback(f"{AgentStatus.COMPETITOR_COMPLETE} (took {elapsed:.1f}s)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -116,8 +124,9 @@ def competitor_node(state: MarketResearchState):
 
 def consumer_node(state: MarketResearchState):
     """Node for consumer analysis"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("👥 Analyzing consumer behavior...")
+    status_callback = state.get("_status_callback") or print
+    start_time = time.time()
+    status_callback(AgentStatus.CONSUMER_START)
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=CONSUMER_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze consumer behavior")
@@ -145,6 +154,8 @@ def consumer_node(state: MarketResearchState):
         "search_results": search_results
     })
 
+    elapsed = time.time() - start_time
+    status_callback(f"{AgentStatus.CONSUMER_COMPLETE} (took {elapsed:.1f}s)")
     return {
         "messages": state['messages'] + [response],
         "research_data": research_data,
@@ -154,8 +165,9 @@ def consumer_node(state: MarketResearchState):
 
 def report_node(state: MarketResearchState):
     """Node for final report generation"""
-    status_callback = state.get("_status_callback", lambda x: None)
-    status_callback("📝 Generating final report...")
+    status_callback = state.get("_status_callback") or print
+    start_time = time.time()
+    status_callback(AgentStatus.REPORT_START)
     # Compile all research data
     market_trends = state['research_data'].get('market_trends', {}).get('findings', '')
     competitor_analysis = state['research_data'].get('competitor', {}).get('findings', '')
@@ -181,6 +193,8 @@ Include key insights, recommendations, and potential opportunities."""
         HumanMessage(content=report_prompt)
     ])
 
+    elapsed = time.time() - start_time
+    status_callback(f"{AgentStatus.REPORT_COMPLETE} (took {elapsed:.1f}s)")
     return {
         "messages": state['messages'] + [response],
         "research_data": state['research_data'],
@@ -191,52 +205,3 @@ Include key insights, recommendations, and potential opportunities."""
 def should_continue(state: MarketResearchState):
     """Determine next node based on state"""
     return state["next_agent"]
-
-def build_research_graph():
-    """Build the research workflow graph"""
-    builder = StateGraph(MarketResearchState)
-
-    # Add nodes
-    builder.add_node("market_trends", market_trends_node)
-    builder.add_node("competitor", competitor_node)
-    builder.add_node("consumer", consumer_node)
-    builder.add_node("report", report_node)
-
-    # Set entry point
-    builder.set_entry_point("market_trends")
-
-    # Add conditional edges
-    builder.add_conditional_edges(
-        "market_trends",
-        should_continue,
-        {
-            AgentType.COMPETITOR.value: "competitor",
-            END: END
-        }
-    )
-
-    builder.add_conditional_edges(
-        "competitor",
-        should_continue,
-        {
-            AgentType.CONSUMER.value: "consumer",
-            END: END
-        }
-    )
-
-    builder.add_conditional_edges(
-        "consumer",
-        should_continue,
-        {
-            AgentType.REPORT.value: "report",
-            END: END
-        }
-    )
-
-    builder.add_conditional_edges(
-        "report",
-        should_continue,
-        {END: END}
-    )
-
-    return builder.compile()

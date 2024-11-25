@@ -17,11 +17,14 @@ from research_agent.agents import (
 
 class MarketResearchOrchestrator:
     """Orchestrates multiple agents in a market research workflow"""
-    def __init__(self, reports_dir: str = "reports", status_callback: Optional[Callable] = None):
+    def __init__(self, status_callback: Callable[[str], None], reports_dir: str = "reports"):
+        # Get the directory where the package is installed
+        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.reports_dir = os.path.join(package_dir, reports_dir)
+        self.status_callback = status_callback
+        print("Debug - orchestrator initialized with callback:", self.status_callback)
+        os.makedirs(self.reports_dir, exist_ok=True)
         self.graph = self._build_graph()
-        self.reports_dir = reports_dir
-        self.status_callback = status_callback or (lambda x: None)  # No-op if no callback provided
-        os.makedirs(reports_dir, exist_ok=True)
 
     def _build_graph(self):
         """Internal method to build the workflow graph"""
@@ -167,11 +170,12 @@ class MarketResearchOrchestrator:
                     f.write("\n" + "-" * 50 + "\n")
         return findings_file
 
-def create_market_research_orchestrator(status_callback: Optional[Callable] = None) -> MarketResearchOrchestrator:
+def create_market_research_orchestrator(status_callback: Callable[[str], None]) -> MarketResearchOrchestrator:
     """
     Create the market research agent with workflow graph.
 
     Returns:
         MarketResearchOrchestrator: Configured market research agent
     """
+    print("Debug - creating orchestrator with callback:", status_callback)
     return MarketResearchOrchestrator(status_callback=status_callback)
