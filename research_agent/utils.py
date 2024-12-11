@@ -55,7 +55,7 @@ PROGRESS_MAP = {
     AgentStatus.REPORT_COMPLETE: 0.9,
 }
 
-PDF_CSS="""
+PDF_CSS = """
     body { font-family: Arial, sans-serif; }
     h1 { color: #2c3e50; margin-top: 2em; }
     h2 { color: #34495e; margin-top: 1.5em; }

@@ -258,7 +258,7 @@ def report_node(state: MarketResearchState):
 
     # Generate report if we have content
     if report_content:
-        print(f"[DEBUG] Report Node - Generating report")
+        print("[DEBUG] Report Node - Generating report")
         report_prompt = f"Based on our research:\n\n{report_content}\n\nPlease generate a comprehensive market research report that synthesizes these findings."
 
         response = model.invoke([
