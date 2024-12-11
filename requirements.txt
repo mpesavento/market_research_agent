@@ -17,3 +17,4 @@ pytest-mock
 boto3
 botocore
 urllib3
+flake8
