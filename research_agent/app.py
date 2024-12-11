@@ -1,16 +1,15 @@
 import gradio as gr
 from datetime import datetime
+from time import time
 import markdown
 from research_agent.workflow import create_market_research_orchestrator
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.schema import AgentAction
-from research_agent.utils import AgentStatus, PROGRESS_MAP
+from research_agent.utils import AgentStatus, PROGRESS_MAP, create_pdf_from_markdown
 from typing import Generator
 from queue import Queue, Empty
 from threading import Thread
 import os
-from time import time  # Add this import for time tracking
-import mdpdf  # replace markdown_pdf import
 
 
 
@@ -91,9 +90,6 @@ def save_findings(findings_dict: dict, timestamp: str = None) -> tuple[str, str,
 def save_report(content: str, timestamp: str = None, format: str = "markdown") -> tuple[str, str, str]:
     """
     Save the final report in the specified format.
-
-    Returns:
-        tuple[str, str, str]: (file_path, preview_content, error_message)
     """
     if not content:
         return "", "", ""
@@ -101,47 +97,56 @@ def save_report(content: str, timestamp: str = None, format: str = "markdown") -
     timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
-        os.makedirs("reports", exist_ok=True)
+        # Get absolute path for reports directory
+        reports_dir = os.path.abspath(os.path.join(os.getcwd(), "reports"))
+        os.makedirs(reports_dir, exist_ok=True)
 
         report_content = "# Market Research Report\n\n"
         report_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         report_content += content
 
         if format == "markdown":
-            file_path = f"reports/report_{timestamp}.md"
+            file_path = os.path.join(reports_dir, f"report_{timestamp}.md")
             with open(file_path, "w", encoding='utf-8') as f:
                 f.write(report_content)
             return file_path, report_content, ""
 
         elif format == "html":
-            file_path = f"reports/report_{timestamp}.html"
+            file_path = os.path.join(reports_dir, f"report_{timestamp}.html")
             html_content = convert_to_html(report_content)
             with open(file_path, "w", encoding='utf-8') as f:
                 f.write(html_content)
             return file_path, html_content, ""
 
         elif format == "pdf":
-            md_file = f"reports/report_{timestamp}.md"
-            pdf_file = f"reports/report_{timestamp}.pdf"
+            try:
+                # Create paths
+                pdf_path = os.path.join(reports_dir, f"report_{timestamp}.pdf")
 
-            # First save markdown
-            with open(md_file, "w", encoding='utf-8') as f:
-                f.write(report_content)
+                print(f"[DEBUG] Creating PDF at: {pdf_path}")
 
-            # Convert to PDF
-            mdpdf.convert_markdown_to_pdf(
-                md_file,
-                pdf_file,
-                css_file=None,  # Optional: provide a CSS file for styling
-                media_path=None
-            )
+                # Convert to PDF using our utility function
+                success = create_pdf_from_markdown(
+                    markdown_content=report_content,
+                    output_file=pdf_path,
+                    title="Market Research Report"
+                )
 
-            # Clean up temporary markdown file
-            os.remove(md_file)
+                if success and os.path.exists(pdf_path):
+                    print(f"[DEBUG] PDF created successfully at: {pdf_path}")
+                    return pdf_path, report_content, ""
+                else:
+                    return "", report_content, f"Error: PDF file was not created at {pdf_path}"
 
-            return pdf_file, report_content, ""
+            except Exception as pdf_error:
+                print(f"[DEBUG] PDF creation error: {str(pdf_error)}")
+                return "", report_content, f"Error creating PDF: {str(pdf_error)}"
+
+        else:
+            return "", report_content, f"Unsupported format: {format}"
 
     except Exception as e:
+        print(f"[DEBUG] General error in save_report: {str(e)}")
         return "", report_content, f"Error saving report: {str(e)}"
 
 def format_intermediate_findings(findings_dict: dict) -> str:
@@ -167,6 +172,7 @@ def conduct_research(
     status_text = ""  # Accumulated status for UI
     result = None
     start_time = time()
+    last_status_time = start_time  # Track time of last status update
     last_debug_time = start_time
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     error_occurred = False  # Add flag to track errors
@@ -178,6 +184,8 @@ def conduct_research(
 
             def status_callback(message: str):
                 """Callback to update status and progress."""
+                nonlocal last_status_time  # Add access to last_status_time
+                last_status_time = time()  # Update time when status received
                 print(f"[STATUS] {message}")
                 status_queue.put(message)
 
@@ -249,42 +257,64 @@ def conduct_research(
                     if error_occurred:  # Exit the loop if an error occurred
                         break
                     current_time = time()
-                    elapsed = int(current_time - start_time)
+                    time_since_status = int(current_time - last_status_time)
 
                     if int(current_time - last_debug_time) >= 10:
-                        minutes = elapsed // 60
-                        seconds = elapsed % 60
-                        print(f"[DEBUG] No status update, elapsed time: {minutes}m {seconds}s")
+                        minutes = time_since_status // 60
+                        seconds = time_since_status % 60
+                        print(f"[DEBUG] Time since last status: {minutes}m {seconds}s")
                         last_debug_time = current_time
                     continue
 
         # After research is complete...
         if result and not error_occurred:
-            # Save both files
-            report_path, _, report_error = save_report(
-                content=result.get("final_report", ""),
-                timestamp=timestamp,
-                format=export_format
-            )
+            try:
+                # Save both files
+                report_path, report_content, report_error = save_report(
+                    content=result.get("final_report", ""),
+                    timestamp=timestamp,
+                    format=export_format
+                )
 
-            findings_path, _, findings_error = save_findings(
-                findings_dict=result.get("agent_outputs", {}),
-                timestamp=timestamp
-            )
+                findings_path, _, findings_error = save_findings(
+                    findings_dict=result.get("agent_outputs", {}),
+                    timestamp=timestamp
+                )
 
-            error_msg = " ".join(filter(None, [report_error, findings_error]))
+                error_msg = " ".join(filter(None, [report_error, findings_error]))
 
-            # Format final findings as string
-            final_findings = format_intermediate_findings(result.get("agent_outputs", {}))
+                # Format final findings as string
+                final_findings = format_intermediate_findings(result.get("agent_outputs", {}))
 
-            yield (
-                final_findings,                  # intermediate_output
-                result.get("final_report", ""),  # final_report
-                report_path,                     # report_file
-                findings_path,                   # findings_file
-                error_msg,                       # error_message
-                status_text + "\n✅ Files saved successfully!"  # status_log
-            )
+                # Ensure report_path is None if it's not a valid file
+                if report_path and not os.path.isfile(report_path):
+                    report_path = None
+                    error_msg = f"Error: Generated report path is invalid: {report_path}"
+
+                # Ensure findings_path is None if it's not a valid file
+                if findings_path and not os.path.isfile(findings_path):
+                    findings_path = None
+                    error_msg = f"{error_msg}\nError: Generated findings path is invalid: {findings_path}"
+
+                yield (
+                    final_findings,                  # intermediate_output
+                    result.get("final_report", ""),  # final_report
+                    report_path,                     # report_file
+                    findings_path,                   # findings_file
+                    error_msg,                       # error_message
+                    status_text + "\n✅ Files saved successfully!" if not error_msg else status_text + f"\n⚠️ {error_msg}"  # status_log
+                )
+
+            except Exception as e:
+                error_msg = f"Error processing results: {str(e)}"
+                yield (
+                    "",                # intermediate_output
+                    "",                # final_report
+                    None,              # report_file
+                    None,              # findings_file
+                    error_msg,         # error_message
+                    status_text + f"\n❌ Error: {error_msg}"  # status_log
+                )
 
     except Exception as e:
         error_msg = f"Error during analysis: {str(e)}"

@@ -9,8 +9,8 @@ aiosqlite
 pygments
 gradio
 markdown
-mdpdf
-# markdown-pdf
+# mdpdf
+markdown-pdf
 # pdfkit
 # weasyprint
 markdown

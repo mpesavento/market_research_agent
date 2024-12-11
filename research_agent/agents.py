@@ -52,11 +52,6 @@ def market_trends_node(state: MarketResearchState):
         return {
             **state,
             "next_agent": "competitor",
-            "research_data": state.get("research_data", {}),
-            "messages": state.get("messages", []),
-            "final_report": state.get("final_report", ""),
-            "_status_callback": state.get("_status_callback"),
-            "focus_areas": focus_areas
         }
 
     status_callback = state.get("_status_callback")
@@ -69,9 +64,7 @@ def market_trends_node(state: MarketResearchState):
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
     ])
 
-    research_data = state['research_data']
-    if 'market_trends' not in research_data:
-        research_data['market_trends'] = {}
+    research_data = state.get('research_data', {})
 
     # Perform searches and collect results
     search_results = []
@@ -82,25 +75,27 @@ def market_trends_node(state: MarketResearchState):
     # Process results with LLM
     response = model.invoke([
         SystemMessage(content=MARKET_TRENDS_ROLE),
-        HumanMessage(content=f"Analyze these market trends findings:\n\n{json.dumps(search_results)}")
+        HumanMessage(content=f"Analyze these market trends:\n\n{json.dumps(search_results)}")
     ])
 
-    research_data['market_trends'].update({
+    research_data['market_trends'] = {
         "last_update": datetime.now().isoformat(),
         "findings": response.content,
         "search_results": search_results
-    })
+    }
 
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
         status_callback(f"{AgentStatus.MARKET_TRENDS_COMPLETE} (took {elapsed_time:.2f} seconds)")
+
     return {
-        "messages": state['messages'] + [response],
+        "messages": state.get('messages', []) + [response],
         "research_data": research_data,
         "next_agent": "competitor",
-        "final_report": None,
-        "_status_callback": status_callback
+        "final_report": state.get("final_report", ""),
+        "_status_callback": status_callback,
+        "focus_areas": focus_areas
     }
 
 def competitor_node(state: MarketResearchState):
@@ -114,25 +109,19 @@ def competitor_node(state: MarketResearchState):
         return {
             **state,
             "next_agent": "consumer",
-            "research_data": state.get("research_data", {}),
-            "messages": state.get("messages", []),
-            "final_report": state.get("final_report", ""),
-            "_status_callback": state.get("_status_callback"),
-            "focus_areas": focus_areas
         }
 
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.COMPETITOR_START)
     start_time = time.time()
+
     queries = model.with_structured_output(SearchQueries).invoke([
         SystemMessage(content=COMPETITOR_ROLE),
         HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
     ])
 
-    research_data = state['research_data']
-    if 'competitor' not in research_data:
-        research_data['competitor'] = {}
+    research_data = state.get('research_data', {})
 
     # Perform searches and collect results
     search_results = []
@@ -143,25 +132,27 @@ def competitor_node(state: MarketResearchState):
     # Process results with LLM
     response = model.invoke([
         SystemMessage(content=COMPETITOR_ROLE),
-        HumanMessage(content=f"Analyze these competitor findings:\n\n{json.dumps(search_results)}")
+        HumanMessage(content=f"Analyze these competitor insights:\n\n{json.dumps(search_results)}")
     ])
 
-    research_data['competitor'].update({
+    research_data['competitor'] = {
         "last_update": datetime.now().isoformat(),
         "findings": response.content,
         "search_results": search_results
-    })
+    }
 
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
         status_callback(f"{AgentStatus.COMPETITOR_COMPLETE} (took {elapsed_time:.2f} seconds)")
+
     return {
-        "messages": state['messages'] + [response],
+        "messages": state.get('messages', []) + [response],
         "research_data": research_data,
         "next_agent": "consumer",
-        "final_report": None,
-        "_status_callback": status_callback
+        "final_report": state.get("final_report", ""),
+        "_status_callback": status_callback,
+        "focus_areas": focus_areas
     }
 
 def consumer_node(state: MarketResearchState):
@@ -189,7 +180,7 @@ def consumer_node(state: MarketResearchState):
 
     # Initialize research_data if it doesn't exist
     research_data = state.get('research_data', {})
-    print(f"[DEBUG] Consumer Node - Initial Research Data: {research_data}")
+    # print(f"[DEBUG] Consumer Node - Initial Research Data: {research_data}")
 
     # Perform searches and collect results
     search_results = []
@@ -210,7 +201,7 @@ def consumer_node(state: MarketResearchState):
         "search_results": search_results
     }
 
-    print(f"[DEBUG] Consumer Node - Updated Research Data: {research_data}")
+    # print(f"[DEBUG] Consumer Node - Updated Research Data: {research_data}")
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -229,52 +220,62 @@ def consumer_node(state: MarketResearchState):
     return updated_state
 
 def report_node(state: MarketResearchState):
-    """Node for final report generation"""
-    print(f"[DEBUG] Report Node - Entering with State Keys: {state.keys()}")
-    print(f"[DEBUG] Report Node - Research Data Keys: {state.get('research_data', {}).keys()}")
+    """Node for generating final report"""
+    print("[DEBUG] Report Node - Entering with State Keys:", state.keys())
 
+    focus_areas = state.get("focus_areas", [])
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.REPORT_START)
 
-    focus_areas = state.get("focus_areas", [])
     research_data = state.get('research_data', {})
+    print("[DEBUG] Report Node - Research Data Keys:", research_data.keys())
 
-    print(f"[DEBUG] Report Node - Full Research Data: {research_data}")
+    # Get the original query from the last message
+    original_query = state['messages'][-1].content if state['messages'] else "No query provided"
 
-    # Compile research data only from selected focus areas
-    report_sections = []
+    # Start with the query section
+    report_content = f"""## Research Query
+{original_query}
 
-    if "consumer_behavior" in focus_areas and 'consumer' in research_data:
-        consumer_insights = research_data['consumer'].get('findings', '')
-        if consumer_insights:
-            print("[DEBUG] Report Node - Found consumer insights")
-            report_sections.append(f"Consumer Insights:\n{consumer_insights}")
+"""
 
-    # Generate report
-    if report_sections:
-        print("[DEBUG] Report Node - Generating report from sections")
-        report_prompt = "Based on our research:\n\n" + "\n\n".join(report_sections)
-        report_prompt += "\n\nPlease generate a comprehensive market research report that synthesizes these findings."
+    # Map focus areas to research data keys
+    focus_area_mapping = {
+        "market_trends": "market_trends",
+        "competitor_analysis": "competitor",
+        "consumer_behavior": "consumer"
+    }
+
+    # Check each focus area for data
+    for focus_area in focus_areas:
+        data_key = focus_area_mapping.get(focus_area)
+        if data_key and data_key in research_data:
+            findings = research_data[data_key].get('findings', '')
+            if findings:
+                print(f"[DEBUG] Report Node - Found {focus_area} data")
+                report_content += f"## {focus_area.replace('_', ' ').title()}\n{findings}\n\n"
+
+    # Generate report if we have content
+    if report_content:
+        print(f"[DEBUG] Report Node - Generating report")
+        report_prompt = f"Based on our research:\n\n{report_content}\n\nPlease generate a comprehensive market research report that synthesizes these findings."
 
         response = model.invoke([
             SystemMessage(content=REPORT_ROLE),
             HumanMessage(content=report_prompt)
         ])
 
-        final_report = response.content
+        final_report = f"{report_content}\n{response.content}"
         print(f"[DEBUG] Report Node - Generated Report Length: {len(final_report)}")
 
         if status_callback:
             status_callback(AgentStatus.REPORT_COMPLETE)
 
         return {
-            "messages": state.get('messages', []) + [response],
-            "research_data": research_data,
-            "next_agent": END,
+            **state,
             "final_report": final_report,
-            "_status_callback": status_callback,
-            "focus_areas": focus_areas
+            "next_agent": END
         }
     else:
         print("[DEBUG] Report Node - No research sections found")
@@ -288,39 +289,40 @@ def should_continue(state: MarketResearchState):
     current_agent = state["next_agent"]
     focus_areas = state.get("focus_areas", [])
 
-    print(f"[DEBUG] Current agent: {current_agent}, Focus areas: {focus_areas}")
+    print(f"[DEBUG] Should Continue - Current Agent: {current_agent}, Focus Areas: {focus_areas}")
 
-    # Mapping between focus areas and agents
-    focus_to_agent = {
-        "market_trends": ["market_trends"],
-        "competitor_analysis": ["competitor"],
-        "consumer_behavior": ["consumer"]
-    }
-
-    # If we're at the report node, end the sequence
-    if current_agent == "report":
+    # If we're at the END or report, stop
+    if current_agent in [END, "report"]:
         return END
 
-    # If no focus areas specified, run all agents
-    if not focus_areas:
-        return state["next_agent"]
+    # Map agents to their focus areas
+    agent_to_focus = {
+        "market_trends": "market_trends",
+        "competitor": "competitor_analysis",
+        "consumer": "consumer_behavior"
+    }
 
-    # Define the full sequence
-    agent_sequence = ["market_trends", "competitor", "consumer", "report"]
-    current_idx = agent_sequence.index(current_agent)
+    # If current agent is in focus areas, let it execute by returning its name
+    if agent_to_focus.get(current_agent) in focus_areas:
+        print(f"[DEBUG] Should Continue - Executing {current_agent}")
+        return current_agent
 
-    # Find the next enabled agent
-    for next_agent in agent_sequence[current_idx + 1:]:
-        if next_agent == "report":
-            return "report"
+    # If current agent isn't in focus areas, find next valid agent
+    agent_sequence = ["market_trends", "competitor", "consumer"]
+    try:
+        current_idx = agent_sequence.index(current_agent)
+        remaining_agents = agent_sequence[current_idx + 1:]
+    except ValueError:
+        remaining_agents = []
 
-        # Check if this agent corresponds to a selected focus area
-        for focus, agents in focus_to_agent.items():
-            if next_agent in agents and focus.lower() in focus_areas:
-                print(f"[DEBUG] Moving to next agent: {next_agent}")
-                return next_agent
+    # Look for the next agent that matches a selected focus area
+    for next_agent in remaining_agents:
+        if agent_to_focus[next_agent] in focus_areas:
+            print(f"[DEBUG] Should Continue - Moving to {next_agent}")
+            return next_agent
 
-    print("[DEBUG] No more agents to run, moving to report")
+    # If no more matching agents, go to report
+    print("[DEBUG] Should Continue - Moving to report")
     return "report"
 
 def build_research_graph():

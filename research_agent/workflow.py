@@ -48,19 +48,45 @@ class MarketResearchOrchestrator:
         builder.add_node("consumer", consumer_node)
         builder.add_node("report", report_node)
 
-        # Add conditional edges from each node to every possible next node
-        for node in ["market_trends", "competitor", "consumer", "report"]:
-            builder.add_conditional_edges(
-                node,
-                should_continue,
-                {
-                    "market_trends": "market_trends",
-                    "competitor": "competitor",
-                    "consumer": "consumer",
-                    "report": "report",
-                    END: END
-                }
-            )
+        # Add edges for market_trends node
+        builder.add_conditional_edges(
+            "market_trends",
+            should_continue,
+            {
+                "competitor": "competitor",
+                "consumer": "consumer",
+                "report": "report",
+                END: END
+            }
+        )
+
+        # Add edges for competitor node
+        builder.add_conditional_edges(
+            "competitor",
+            should_continue,
+            {
+                "consumer": "consumer",
+                "report": "report",
+                END: END
+            }
+        )
+
+        # Add edges for consumer node
+        builder.add_conditional_edges(
+            "consumer",
+            should_continue,
+            {
+                "report": "report",
+                END: END
+            }
+        )
+
+        # Add edge for report node
+        builder.add_conditional_edges(
+            "report",
+            should_continue,
+            {END: END}
+        )
 
         # Set entry point - this will be determined by the initial state
         builder.set_entry_point("market_trends")
