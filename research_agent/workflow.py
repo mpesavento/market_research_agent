@@ -48,42 +48,22 @@ class MarketResearchOrchestrator:
         builder.add_node("consumer", consumer_node)
         builder.add_node("report", report_node)
 
-        # Set entry point
+        # Add conditional edges from each node to every possible next node
+        for node in ["market_trends", "competitor", "consumer", "report"]:
+            builder.add_conditional_edges(
+                node,
+                should_continue,
+                {
+                    "market_trends": "market_trends",
+                    "competitor": "competitor",
+                    "consumer": "consumer",
+                    "report": "report",
+                    END: END
+                }
+            )
+
+        # Set entry point - this will be determined by the initial state
         builder.set_entry_point("market_trends")
-
-        # Add conditional edges
-        builder.add_conditional_edges(
-            "market_trends",
-            should_continue,
-            {
-                "competitor": "competitor",
-                END: END
-            }
-        )
-
-        builder.add_conditional_edges(
-            "competitor",
-            should_continue,
-            {
-                "consumer": "consumer",
-                END: END
-            }
-        )
-
-        builder.add_conditional_edges(
-            "consumer",
-            should_continue,
-            {
-                "report": "report",
-                END: END
-            }
-        )
-
-        builder.add_conditional_edges(
-            "report",
-            should_continue,
-            {END: END}
-        )
 
         return builder.compile()
 
@@ -150,41 +130,62 @@ class MarketResearchOrchestrator:
             "access_path": access_path
         }
 
-    def run_research(self, query: str) -> Dict[str, Any]:
-        """
-        Orchestrate the research workflow across multiple specialized agents
-        """
+    def run_research(self, query: str, focus_areas: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Orchestrate the research workflow across multiple specialized agents"""
         query = query.strip()
         if not query:
             raise ValueError("Query cannot be empty")
 
-        self.status_callback("🔄 Starting market research workflow...")
+        # Convert focus areas to standard format and log them
+        focus_areas = [area.replace(" ", "_").lower() for area in (focus_areas or [])]
+        print(f"[DEBUG] Selected focus areas: {focus_areas}")
 
-        # Initialize the state with the callback
+        self.status_callback("🔄 Preparing research workflow")
+
+        # Determine the first agent based on focus areas
+        first_agent = "report"  # Default to report if no focus areas
+        if focus_areas:
+            if "market_trends" in focus_areas:
+                first_agent = "market_trends"
+            elif "competitor_analysis" in focus_areas:
+                first_agent = "competitor"
+            elif "consumer_behavior" in focus_areas:
+                first_agent = "consumer"
+
+        print(f"[DEBUG] Starting with agent: {first_agent}")
+
         initial_state = {
             "query": query,
-            "messages": [HumanMessage(content=query)],  # Initialize with the query
+            "messages": [HumanMessage(content=query)],
             "research_data": {},
             "final_report": "",
             "agent_outputs": {},
-            "_status_callback": self.status_callback,  # Ensure callback is included
-            "next_agent": "market_trends"  # Set initial agent
+            "_status_callback": self.status_callback,
+            "next_agent": first_agent,
+            "focus_areas": focus_areas
         }
 
         # Run the graph
-        self.status_callback("🔄 Executing research workflow...")
+        self.status_callback("🔍 Beginning research analysis")
         start_time = time.time()
         try:
             final_state = self.graph.invoke(initial_state)
+
+            # Check if we need to run the report node explicitly
+            if final_state.get("next_agent") == "report":
+                print("[DEBUG] Running report node explicitly")
+                final_state = report_node(final_state)
+
+            if not final_state.get("final_report"):
+                raise RuntimeError("Research failed to generate a report")
+
         except Exception as e:
-            self.status_callback(f"\n❌ Error during workflow execution: {str(e)}")
+            self.status_callback(f"❌ Error during research: {str(e)}")
             raise
+
         end_time = time.time()
         elapsed_time = end_time - start_time
         self.status_callback(f"✅ Research workflow complete (took {elapsed_time:.2f} seconds)")
-
-        if not final_state.get("final_report"):
-            raise RuntimeError("Research failed to generate a report")
 
         # Save reports
         self.status_callback("💾 Saving research outputs...")

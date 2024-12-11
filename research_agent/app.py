@@ -10,6 +10,7 @@ from queue import Queue, Empty
 from threading import Thread
 import os
 from time import time  # Add this import for time tracking
+import mdpdf  # replace markdown_pdf import
 
 
 
@@ -21,6 +22,7 @@ def enhance_query(query: str, depth: str, focus_areas: list) -> str:
         "Comprehensive": "Perform an exhaustive analysis with detailed insights, trends, and recommendations"
     }
 
+    # Only include prompts for selected focus areas
     focus_prompts = {
         "Market Trends": "- Analyze current and emerging market trends\n- Identify growth patterns and market size\n- Highlight industry innovations",
         "Competitor Analysis": "- Evaluate major competitors and their market share\n- Compare product features and pricing\n- Assess competitive advantages",
@@ -31,15 +33,17 @@ def enhance_query(query: str, depth: str, focus_areas: list) -> str:
 
     selected_focus_prompts = [focus_prompts[area] for area in focus_areas if area in focus_prompts]
 
+    print(f"[DEBUG] Enhancing query for focus areas: {focus_areas}")
+
     enhanced_query = f"""Conduct a {depth.lower()} market analysis regarding: {query}
 
 Analysis Depth: {depth}
 {depth_prompts[depth]}
 
-Focus Areas:
+Selected Focus Areas:
 {chr(10).join(selected_focus_prompts)}
 
-Please structure the analysis to address each focus area systematically."""
+Please structure the analysis to address ONLY the selected focus areas systematically."""
 
     return enhanced_query
 
@@ -52,34 +56,105 @@ def convert_to_html(markdown_text: str) -> str:
     </div>
     """
 
-def save_report(content: str, format: str = "markdown") -> tuple[str, str, str]:
+def save_findings(findings_dict: dict, timestamp: str = None) -> tuple[str, str, str]:
     """
-    Save the report in the specified format.
+    Save intermediate findings to a separate file.
 
     Returns:
         tuple[str, str, str]: (file_path, preview_content, error_message)
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if not findings_dict:
+        return "", "", ""
+
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+
     try:
+        os.makedirs("reports", exist_ok=True)
+
+        findings_content = "# Market Research - Intermediate Findings\n\n"
+        findings_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+        for agent, data in findings_dict.items():
+            if "findings" in data:
+                findings_content += f"## {agent.replace('_', ' ').title()}\n"
+                findings_content += f"{data['findings']}\n\n"
+
+        file_path = f"reports/findings_{timestamp}.md"
+        with open(file_path, "w", encoding='utf-8') as f:
+            f.write(findings_content)
+
+        return file_path, findings_content, ""
+
+    except Exception as e:
+        return "", findings_content, f"Error saving findings: {str(e)}"
+
+def save_report(content: str, timestamp: str = None, format: str = "markdown") -> tuple[str, str, str]:
+    """
+    Save the final report in the specified format.
+
+    Returns:
+        tuple[str, str, str]: (file_path, preview_content, error_message)
+    """
+    if not content:
+        return "", "", ""
+
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    try:
+        os.makedirs("reports", exist_ok=True)
+
+        report_content = "# Market Research Report\n\n"
+        report_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        report_content += content
+
         if format == "markdown":
             file_path = f"reports/report_{timestamp}.md"
-            with open(file_path, "w") as f:
-                f.write(content)
-            return file_path, content, ""
+            with open(file_path, "w", encoding='utf-8') as f:
+                f.write(report_content)
+            return file_path, report_content, ""
 
         elif format == "html":
             file_path = f"reports/report_{timestamp}.html"
-            html_content = convert_to_html(content)
-            with open(file_path, "w") as f:
+            html_content = convert_to_html(report_content)
+            with open(file_path, "w", encoding='utf-8') as f:
                 f.write(html_content)
             return file_path, html_content, ""
 
         elif format == "pdf":
-            # PDF conversion would go here
-            return "", content, "PDF export not yet implemented"
+            md_file = f"reports/report_{timestamp}.md"
+            pdf_file = f"reports/report_{timestamp}.pdf"
+
+            # First save markdown
+            with open(md_file, "w", encoding='utf-8') as f:
+                f.write(report_content)
+
+            # Convert to PDF
+            mdpdf.convert_markdown_to_pdf(
+                md_file,
+                pdf_file,
+                css_file=None,  # Optional: provide a CSS file for styling
+                media_path=None
+            )
+
+            # Clean up temporary markdown file
+            os.remove(md_file)
+
+            return pdf_file, report_content, ""
 
     except Exception as e:
-        return "", content, f"Error saving report: {str(e)}"
+        return "", report_content, f"Error saving report: {str(e)}"
+
+def format_intermediate_findings(findings_dict: dict) -> str:
+    """Format intermediate findings dictionary into markdown string."""
+    if not findings_dict:
+        return ""
+
+    content = "## Intermediate Findings\n\n"
+    for agent, data in findings_dict.items():
+        if "findings" in data:
+            content += f"### {agent.replace('_', ' ').title()}\n"
+            content += f"{data['findings']}\n\n"
+    return content
 
 def conduct_research(
     query: str,
@@ -87,25 +162,23 @@ def conduct_research(
     focus_areas: list,
     export_format: str = "markdown"
 ) -> Generator[tuple, None, None]:
-    """
-    Generator function to conduct market research and yield updates.
-    """
+    """Generator function to conduct market research and yield updates."""
     status_queue = Queue()
-    status_text = "⏳ Waiting to start...\n"
+    status_text = ""  # Accumulated status for UI
     result = None
-    start_time = time()  # Track start time
+    start_time = time()
+    last_debug_time = start_time
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    error_occurred = False  # Add flag to track errors
 
     try:
-        # Only start if not already running
         if result is None:
-            print("[DEBUG] Starting research process...")
+            print("[DEBUG] Initializing research orchestrator...")
             enhanced_query = enhance_query(query, analysis_depth, focus_areas)
 
             def status_callback(message: str):
-                """
-                Callback to update status and progress.
-                """
-                print(f"[DEBUG] Status callback received: {message}")
+                """Callback to update status and progress."""
+                print(f"[STATUS] {message}")
                 status_queue.put(message)
 
             print("[DEBUG] Creating orchestrator...")
@@ -113,16 +186,22 @@ def conduct_research(
                 status_callback=status_callback
             )
 
-            # Run orchestrator in a separate thread
             def run_orchestrator():
-                nonlocal result
-                print("[DEBUG] Orchestrator thread starting...")
-                result = orchestrator.run_research(enhanced_query)
-                print("[DEBUG] Orchestrator thread completed")
-                status_queue.put(None)  # Signal completion
+                nonlocal result, error_occurred
+                try:
+                    print("[DEBUG] Starting research execution...")
+                    result = orchestrator.run_research(
+                        enhanced_query,
+                        focus_areas=focus_areas
+                    )
+                    print("[DEBUG] Research execution completed")
+                except Exception as e:
+                    error_occurred = True
+                    status_queue.put(f"ERROR: {str(e)}")
+                finally:
+                    status_queue.put(None)  # Signal completion
 
             thread = Thread(target=run_orchestrator)
-            print("[DEBUG] Starting orchestrator thread")
             thread.start()
 
             # Process status updates
@@ -133,47 +212,89 @@ def conduct_research(
                         print("[DEBUG] Research complete signal received")
                         break
 
-                    # Append new status to existing status text
+                    # Check if the message indicates an error
+                    if status_msg.startswith("ERROR:"):
+                        error_occurred = True
+                        status_text += f"❌ {status_msg}\n"
+                        yield (
+                            "",                # intermediate_output
+                            "",                # final_report
+                            None,              # report_file
+                            None,              # findings_file
+                            status_msg,        # error_message
+                            status_text        # status_log
+                        )
+                        break  # Exit the loop on error
+
+                    # Update UI status text with new message
+                    if not status_text:
+                        status_text = "⏳ Research Started\n"
                     status_text += f"{status_msg}\n"
-                    print(f"[DEBUG] Updated status text (length: {len(status_text)}):\n{status_text}")
 
-                    # Yield all components including current status
-                    yield (
-                        "",                # intermediate_output
-                        "",                # final_report
-                        "",                # file_path
-                        "",                # error_message
-                        status_text,       # status_log
-                        ""                 # download_btn
+                    # Format intermediate findings as string
+                    current_findings = format_intermediate_findings(
+                        result.get("agent_outputs", {}) if result else {}
                     )
+
+                    yield (
+                        current_findings,     # intermediate_output
+                        "",                   # final_report
+                        None,                # report_file
+                        None,                # findings_file
+                        "",                  # error_message
+                        status_text          # status_log
+                    )
+
                 except Empty:
-                    elapsed = int(time() - start_time)
-                    minutes = elapsed // 60
-                    seconds = elapsed % 60
-                    time_str = f"{minutes}m {seconds}s"
-                    print(f"[DEBUG] No status update, elapsed time: {time_str}")
-                    continue
-                except Exception as e:
-                    print(f"[DEBUG] Error in status update loop: {str(e)}")
+                    if error_occurred:  # Exit the loop if an error occurred
+                        break
+                    current_time = time()
+                    elapsed = int(current_time - start_time)
+
+                    if int(current_time - last_debug_time) >= 10:
+                        minutes = elapsed // 60
+                        seconds = elapsed % 60
+                        print(f"[DEBUG] No status update, elapsed time: {minutes}m {seconds}s")
+                        last_debug_time = current_time
                     continue
 
-            # After research is complete...
-            elapsed = int(time() - start_time)
-            minutes = elapsed // 60
-            seconds = elapsed % 60
-            status_text += f"\n✅ Research completed in {minutes}m {seconds}s\n"
+        # After research is complete...
+        if result and not error_occurred:
+            # Save both files
+            report_path, _, report_error = save_report(
+                content=result.get("final_report", ""),
+                timestamp=timestamp,
+                format=export_format
+            )
 
-            # ... rest of the completion code ...
+            findings_path, _, findings_error = save_findings(
+                findings_dict=result.get("agent_outputs", {}),
+                timestamp=timestamp
+            )
+
+            error_msg = " ".join(filter(None, [report_error, findings_error]))
+
+            # Format final findings as string
+            final_findings = format_intermediate_findings(result.get("agent_outputs", {}))
+
+            yield (
+                final_findings,                  # intermediate_output
+                result.get("final_report", ""),  # final_report
+                report_path,                     # report_file
+                findings_path,                   # findings_file
+                error_msg,                       # error_message
+                status_text + "\n✅ Files saved successfully!"  # status_log
+            )
 
     except Exception as e:
         error_msg = f"Error during analysis: {str(e)}"
         yield (
             "",                # intermediate_output
             "",                # final_report
-            "",                # file_path
+            None,             # report_file
+            None,             # findings_file
             error_msg,         # error_message
-            status_text + f"\n❌ Error: {error_msg}",  # Append error to status log
-            ""                 # download_btn
+            status_text + f"\n❌ Error: {error_msg}"  # status_log
         )
 
 def create_interface():
@@ -333,18 +454,19 @@ def create_interface():
             )
 
         with gr.Row():
-            with gr.Column(scale=2):
-                file_path = gr.Textbox(
-                    label="Report Location",
-                    show_label=True,
-                    container=True,
-                )
             with gr.Column(scale=1):
-                download_btn = gr.Button(value="📥 Download Report", visible=True)
-                file_output = gr.File(
-                    label="Download",
-                    interactive=False,
+                # Replace buttons with File components that show as links
+                report_file = gr.File(
+                    label="Download Final Report",
                     visible=True,
+                    height=50,
+                    interactive=False
+                )
+                findings_file = gr.File(
+                    label="Download Intermediate Findings",
+                    visible=True,
+                    height=50,
+                    interactive=False
                 )
 
         error_message = gr.Markdown(
@@ -352,7 +474,7 @@ def create_interface():
             show_label=False
         )
 
-        # Update submit button click handler to ensure status_log is included
+        # Update submit button click handler with new outputs
         submit_btn.click(
             fn=conduct_research,
             inputs=[
@@ -364,10 +486,10 @@ def create_interface():
             outputs=[
                 intermediate_output,
                 final_report,
-                file_path,
+                report_file,        # Changed from report_path
+                findings_file,      # Changed from findings_path
                 error_message,
-                status_log,
-                download_btn
+                status_log
             ],
             show_progress=False
         )

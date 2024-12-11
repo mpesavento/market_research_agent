@@ -42,8 +42,11 @@ charset-normalizer==3.4.0
     # via requests
 click==8.1.7
     # via
+    #   mdpdf
     #   typer
     #   uvicorn
+commonmark==0.9.1
+    # via mdpdf
 dataclasses-json==0.6.7
     # via langchain-community
 distro==1.9.0
@@ -147,6 +150,8 @@ markupsafe==2.1.5
     #   jinja2
 marshmallow==3.23.1
     # via dataclasses-json
+mdpdf==0.0.18
+    # via -r requirements.in
 mdurl==0.1.2
     # via markdown-it-py
 msgpack==1.1.0
@@ -181,8 +186,6 @@ packaging==24.2
     #   marshmallow
 pandas==2.2.3
     # via gradio
-pdfkit==1.0.0
-    # via -r requirements.in
 pillow==11.0.0
     # via gradio
 propcache==0.2.1
@@ -208,6 +211,10 @@ pygments==2.18.0
     # via
     #   -r requirements.in
     #   rich
+pymupdf==1.24.2
+    # via mdpdf
+pymupdfb==1.24.1
+    # via pymupdf
 python-dateutil==2.9.0.post0
     # via
     #   botocore
