@@ -51,7 +51,7 @@ clean:
 
 ## Lint using flake8
 lint:
-	flake8 src
+	flake8 research_agent
 
 .PHONY: test test-integration
 
