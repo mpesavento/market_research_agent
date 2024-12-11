@@ -7,10 +7,10 @@ name = "research_agent"
 version = "0.1.0"
 description = "An AI-powered market research assistant"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Mike Pesavento", email = "mike@peztek.com" }
 ]
 dependencies = [
     "openai~=1.57.2",
