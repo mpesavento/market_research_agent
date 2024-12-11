@@ -95,12 +95,9 @@ Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ## Research Query
 {query}
 
-[TOC]
-
----
 """
     # Add title page with TOC enabled
-    pdf.add_section(Section(title_section, toc=True), user_css=PDF_CSS)
+    pdf.add_section(Section(title_section, toc=3), user_css=PDF_CSS)
 
     # Split content into sections based on h1 headers (# )
     sections = re.split(r'(?=^# )', markdown_content.strip(), flags=re.MULTILINE)

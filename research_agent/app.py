@@ -165,7 +165,6 @@ def conduct_research(
     query: str,
     analysis_depth: str,
     focus_areas: list,
-    export_format: str = "markdown"
 ) -> Generator[tuple, None, None]:
     """Generator function to conduct market research and yield updates."""
     status_queue = Queue()
@@ -227,10 +226,15 @@ def conduct_research(
                         yield (
                             "",                # intermediate_output
                             "",                # final_report
-                            None,              # report_file
-                            None,              # findings_file
+                            None,              # report_file_md
+                            None,              # report_file_html
+                            None,              # report_file_pdf
+                            None,              # findings_file_md
+                            None,              # findings_file_html
+                            None,              # findings_file_pdf
                             status_msg,        # error_message
-                            status_text        # status_log
+                            status_text,       # status_log
+                            False              # download_row visibility
                         )
                         break  # Exit the loop on error
 
@@ -247,10 +251,15 @@ def conduct_research(
                     yield (
                         current_findings,     # intermediate_output
                         "",                   # final_report
-                        None,                # report_file
-                        None,                # findings_file
+                        None,                # report_file_md
+                        None,                # report_file_html
+                        None,                # report_file_pdf
+                        None,                # findings_file_md
+                        None,                # findings_file_html
+                        None,                # findings_file_pdf
                         "",                  # error_message
-                        status_text          # status_log
+                        status_text,       # status_log
+                        False              # download_row visibility
                     )
 
                 except Empty:
@@ -273,7 +282,7 @@ def conduct_research(
                 report_path, report_content, report_error = save_report(
                     content=result.get("final_report", ""),
                     timestamp=timestamp,
-                    format=export_format
+                    format="markdown"
                 )
 
                 findings_path, _, findings_error = save_findings(
@@ -296,13 +305,56 @@ def conduct_research(
                     findings_path = None
                     error_msg = f"{error_msg}\nError: Generated findings path is invalid: {findings_path}"
 
+                # Generate reports in all formats
+                report_path_md, _, report_error_md = save_report(
+                    content=result.get("final_report", ""),
+                    timestamp=timestamp,
+                    format="markdown"
+                )
+                report_path_html, _, report_error_html = save_report(
+                    content=result.get("final_report", ""),
+                    timestamp=timestamp,
+                    format="html"
+                )
+                report_path_pdf, _, report_error_pdf = save_report(
+                    content=result.get("final_report", ""),
+                    timestamp=timestamp,
+                    format="pdf"
+                )
+
+                # Generate findings in all formats
+                findings_path_md, _, findings_error_md = save_findings(
+                    findings_dict=result.get("agent_outputs", {}),
+                    timestamp=timestamp
+                )
+                findings_path_html, _, findings_error_html = save_report(
+                    content=format_intermediate_findings(result.get("agent_outputs", {})),
+                    timestamp=f"{timestamp}_findings",
+                    format="html"
+                )
+                findings_path_pdf, _, findings_error_pdf = save_report(
+                    content=format_intermediate_findings(result.get("agent_outputs", {})),
+                    timestamp=f"{timestamp}_findings",
+                    format="pdf"
+                )
+
+                error_msg = " ".join(filter(None, [
+                    report_error_md, report_error_html, report_error_pdf,
+                    findings_error_md, findings_error_html, findings_error_pdf
+                ]))
+
                 yield (
                     final_findings,                  # intermediate_output
                     result.get("final_report", ""),  # final_report
-                    report_path,                     # report_file
-                    findings_path,                   # findings_file
+                    report_path_md,                  # report_file_md
+                    report_path_html,                # report_file_html
+                    report_path_pdf,                 # report_file_pdf
+                    findings_path_md,                # findings_file_md
+                    findings_path_html,              # findings_file_html
+                    findings_path_pdf,               # findings_file_pdf
                     error_msg,                       # error_message
-                    status_text + "\n✅ Files saved successfully!" if not error_msg else status_text + f"\n⚠️ {error_msg}"  # status_log
+                    status_text + "\n✅ Files saved successfully!" if not error_msg else status_text + f"\n⚠️ {error_msg}",  # status_log
+                    True                            # download_row visibility
                 )
 
             except Exception as e:
@@ -310,10 +362,15 @@ def conduct_research(
                 yield (
                     "",                # intermediate_output
                     "",                # final_report
-                    None,              # report_file
-                    None,              # findings_file
+                    None,              # report_file_md
+                    None,              # report_file_html
+                    None,              # report_file_pdf
+                    None,              # findings_file_md
+                    None,              # findings_file_html
+                    None,              # findings_file_pdf
                     error_msg,         # error_message
-                    status_text + f"\n❌ Error: {error_msg}"  # status_log
+                    status_text + f"\n❌ Error: {error_msg}",  # status_log
+                    False              # download_row visibility
                 )
 
     except Exception as e:
@@ -321,10 +378,15 @@ def conduct_research(
         yield (
             "",                # intermediate_output
             "",                # final_report
-            None,             # report_file
-            None,             # findings_file
+            None,             # report_file_md
+            None,             # report_file_html
+            None,             # report_file_pdf
+            None,             # findings_file_md
+            None,             # findings_file_html
+            None,             # findings_file_pdf
             error_msg,         # error_message
-            status_text + f"\n❌ Error: {error_msg}"  # status_log
+            status_text + f"\n❌ Error: {error_msg}",  # status_log
+            False              # download_row visibility
         )
 
 def create_interface():
@@ -448,11 +510,6 @@ def create_interface():
                         value=["Market Trends", "Competitor Analysis", "Consumer Behavior"],
                         label="Focus Areas"
                     )
-                    export_format = gr.Radio(
-                        choices=["markdown", "html", "pdf"],
-                        value="markdown",
-                        label="Export Format"
-                    )
 
                 submit_btn = gr.Button("🔍 Generate Report", variant="primary", size="lg")
 
@@ -484,18 +541,60 @@ def create_interface():
             )
 
         with gr.Row():
-            with gr.Column(scale=1):
-                # Replace buttons with File components that show as links
-                report_file = gr.File(
-                    label="Download Final Report",
+            download_section = gr.HTML(
+                visible=False,
+                value="""
+                <div id="downloads-container">
+                    <div style="display: flex; gap: 20px;">
+                        <div style="flex: 0.5">
+                            <h3>Final Report Downloads</h3>
+                        </div>
+                        <div style="flex: 0.5">
+                            <h3>Findings Downloads</h3>
+                        </div>
+                    </div>
+                </div>
+                """
+            )
+
+        with gr.Row():
+            with gr.Column(scale=0.5):
+                report_file_md = gr.File(
+                    label="Download Report (Markdown)",
                     visible=True,
-                    height=50,
+                    height=40,
                     interactive=False
                 )
-                findings_file = gr.File(
-                    label="Download Intermediate Findings",
+                report_file_html = gr.File(
+                    label="Download Report (HTML)",
                     visible=True,
-                    height=50,
+                    height=40,
+                    interactive=False
+                )
+                report_file_pdf = gr.File(
+                    label="Download Report (PDF)",
+                    visible=True,
+                    height=40,
+                    interactive=False
+                )
+
+            with gr.Column(scale=0.5):
+                findings_file_md = gr.File(
+                    label="Download Findings (Markdown)",
+                    visible=True,
+                    height=40,
+                    interactive=False
+                )
+                findings_file_html = gr.File(
+                    label="Download Findings (HTML)",
+                    visible=True,
+                    height=40,
+                    interactive=False
+                )
+                findings_file_pdf = gr.File(
+                    label="Download Findings (PDF)",
+                    visible=True,
+                    height=40,
                     interactive=False
                 )
 
@@ -511,15 +610,19 @@ def create_interface():
                 query,
                 analysis_depth,
                 focus_areas,
-                export_format
             ],
             outputs=[
                 intermediate_output,
                 final_report,
-                report_file,        # Changed from report_path
-                findings_file,      # Changed from findings_path
+                report_file_md,
+                report_file_html,
+                report_file_pdf,
+                findings_file_md,
+                findings_file_html,
+                findings_file_pdf,
                 error_message,
-                status_log
+                status_log,
+                download_section
             ],
             show_progress=False
         )
