@@ -8,3 +8,9 @@ Sphinx
 coverage
 pytest
 pytest-mock
+tomli
+hatchling>=1.18.0
+black
+isort
+mypy
+ruff

@@ -57,10 +57,16 @@ requirements:
 clean:
 	find . -type f -name "*.py[co]" -delete
 	find . -type d -name "__pycache__" -delete
+	find . -type d -name "dist" -delete
+	find . -type d -name "build" -delete
+	find . -type d -name "*.egg-info" -delete
 
 ## Lint using flake8
 lint:
 	flake8 research_agent
+
+validate:
+	python -c "import tomli; tomli.loads(open('pyproject.toml').read())"
 
 .PHONY: test test-integration
 

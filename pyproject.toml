@@ -1,17 +1,22 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = [
+    "setuptools>=61.0.0",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "research_agent"
-version = "0.1.0"
-description = "An AI-powered market research assistant"
+name = "market-research-agent"
+version = "0.2.0"
+description = "AI-powered market research assistant"
 readme = "README.md"
-requires-python = ">=3.10"
-license = "MIT"
+requires-python = ">=3.8"
 authors = [
-    { name = "Mike Pesavento", email = "mike@peztek.com" }
+    {name = "Mike Pesavento", email = "mike@peztek.com"}
 ]
+urls.Homepage = "https://github.com/mpesavento/market_research_agent"
+urls.Bug-Tracker = "https://github.com/mpesavento/market_research_agent/issues"
+urls.Live-Demo = "https://agentic-market-research-asst-aac5e24f35f7.herokuapp.com/"
 dependencies = [
     "openai~=1.57.2",
     "langchain~=0.3.11",
@@ -31,23 +36,12 @@ dependencies = [
     "urllib3",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio",
-    "black",
-    "isort",
-    "mypy",
-    "ruff",
-    "pip-tools",
-]
-
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.setuptools]
+packages = ["research_agent"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py310"]
 include = '\.pyi?$'
 
 [tool.isort]
@@ -57,7 +51,7 @@ line_length = 100
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -70,7 +64,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -105,9 +99,21 @@ markers = [
     "integration: mark test as an integration test"
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/yourusername/research_agent"
-"Bug Tracker" = "https://github.com/yourusername/research_agent/issues"
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.metadata.hooks.read-metadata]
+files = ["research_agent/version.py"]
+mapping.__author__ = "authors"
+mapping.__author_email__ = "authors"
+mapping.__description__ = "description"
+mapping.__urls__ = "urls"
 
 [project.scripts]
-research-agent = "research_agent.app:main"
+market-research-agent = "research_agent.app:main"
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "research_agent/version.py"

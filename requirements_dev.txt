@@ -42,6 +42,8 @@ attrs==24.2.0
     #   aiohttp
 babel==2.16.0
     # via sphinx
+black==24.10.0
+    # via -r requirements_dev.in
 boto3==1.35.78
     # via -r /Users/mpesavento/src/market_research_agent/requirements.txt
 botocore==1.35.78
@@ -64,6 +66,7 @@ charset-normalizer==3.4.0
 click==8.1.7
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
+    #   black
     #   pip-tools
     #   typer
     #   uvicorn
@@ -118,6 +121,8 @@ h11==0.14.0
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   httpcore
     #   uvicorn
+hatchling==1.26.3
+    # via -r requirements_dev.in
 httpcore==1.0.7
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
@@ -152,6 +157,8 @@ imagesize==1.4.1
     # via sphinx
 iniconfig==2.0.0
     # via pytest
+isort==5.13.2
+    # via -r requirements_dev.in
 jinja2==3.1.4
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
@@ -244,9 +251,13 @@ multidict==6.1.0
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   aiohttp
     #   yarl
+mypy==1.13.0
+    # via -r requirements_dev.in
 mypy-extensions==1.0.0
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
+    #   black
+    #   mypy
     #   typing-inspect
 numpy==1.26.4
     # via
@@ -268,9 +279,11 @@ orjson==3.10.12
 packaging==24.2
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
+    #   black
     #   build
     #   gradio
     #   gradio-client
+    #   hatchling
     #   huggingface-hub
     #   langchain-core
     #   marshmallow
@@ -280,14 +293,22 @@ pandas==2.2.3
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   gradio
+pathspec==0.12.1
+    # via
+    #   black
+    #   hatchling
 pillow==11.0.0
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   gradio
 pip-tools==7.4.1
     # via -r requirements_dev.in
+platformdirs==4.3.6
+    # via black
 pluggy==1.5.0
-    # via pytest
+    # via
+    #   hatchling
+    #   pytest
 propcache==0.2.1
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
@@ -394,6 +415,7 @@ rich==13.9.4
 ruff==0.8.2
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
+    #   -r requirements_dev.in
     #   gradio
 s3transfer==0.10.4
     # via
@@ -459,6 +481,8 @@ tiktoken==0.8.0
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   langchain-openai
     #   tavily-python
+tomli==2.2.1
+    # via -r requirements_dev.in
 tomlkit==0.13.2
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
@@ -468,6 +492,8 @@ tqdm==4.67.1
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
     #   huggingface-hub
     #   openai
+trove-classifiers==2024.10.21.16
+    # via hatchling
 typer==0.15.1
     # via
     #   -r /Users/mpesavento/src/market_research_agent/requirements.txt
@@ -482,6 +508,7 @@ typing-extensions==4.12.2
     #   gradio-client
     #   huggingface-hub
     #   langchain-core
+    #   mypy
     #   openai
     #   pydantic
     #   pydantic-core
