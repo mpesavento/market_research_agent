@@ -9,6 +9,7 @@ from threading import Thread
 from research_agent.workflow import create_market_research_orchestrator
 from research_agent.utils import create_pdf_from_markdown
 from research_agent.prompts import DEPTH_PROMPTS, FOCUS_PROMPTS
+from research_agent.version import __version__
 
 
 def enhance_query(query: str, depth: str, focus_areas: list) -> str:
@@ -478,8 +479,10 @@ def create_interface():
         ),
         css=custom_css
     ) as interface:
-        gr.Markdown("""
+        gr.Markdown(f"""
         # 📊 Market Research Assistant
+        *Version {__version__}*
+
         Generate comprehensive market analysis reports with customizable focus areas and depth.
         """, elem_classes="markdown-text")
 

@@ -3,15 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "research_agent"
-version = "0.1.0"
-description = "An AI-powered market research assistant"
+name = "market-research-agent"
+dynamic = ["version", "description", "authors", "urls"]
 readme = "README.md"
-requires-python = ">=3.10"
-license = "MIT"
-authors = [
-    { name = "Mike Pesavento", email = "mike@peztek.com" }
-]
+requires-python = ">=3.8"
 dependencies = [
     "openai~=1.57.2",
     "langchain~=0.3.11",
@@ -105,9 +100,14 @@ markers = [
     "integration: mark test as an integration test"
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/yourusername/research_agent"
-"Bug Tracker" = "https://github.com/yourusername/research_agent/issues"
+[tool.hatch.metadata.hooks.read-metadata]
+files = ["research_agent/version.py"]
+mapping = {
+    "__author__" = "authors",
+    "__author_email__" = "authors",
+    "__description__" = "description",
+    "__urls__" = "urls"
+}
 
 [project.scripts]
-research-agent = "research_agent.app:main"
+market-research-agent = "research_agent.app:main"
