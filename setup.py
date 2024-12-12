@@ -7,19 +7,25 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, "research_agent", "version.py"), "r", encoding="utf-8") as f:
     exec(f.read(), about)
 
+# Debug print to see what we got
+print("About dict contents:")
+for key, value in about.items():
+    print(f"{key}: {value}")
+
+
 # Read README.md for long description
 with open("README.md", "r", encoding="utf-8") as f:
     long_description = f.read()
 
 setup(
-    name="research-agent",
+    name="market-research-agent",
     version=about["__version__"],
     author=about["__author__"],
     author_email=about["__author_email__"],
     description=about["__description__"],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url=about["__url__"],
+    url=about["__urls__"]["Homepage"],
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
