@@ -1,43 +1,26 @@
-import gradio as gr
+import os
 from datetime import datetime
 from time import time
 import markdown
-from research_agent.workflow import create_market_research_orchestrator
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import AgentAction
-from research_agent.utils import AgentStatus, PROGRESS_MAP, create_pdf_from_markdown
+import gradio as gr
 from typing import Generator
 from queue import Queue, Empty
 from threading import Thread
-import os
-
+from research_agent.workflow import create_market_research_orchestrator
+from research_agent.utils import create_pdf_from_markdown
+from research_agent.prompts import DEPTH_PROMPTS, FOCUS_PROMPTS
 
 
 def enhance_query(query: str, depth: str, focus_areas: list) -> str:
     """Enhance the research query with depth and focus specifications."""
-    depth_prompts = {
-        "Basic": "Provide a high-level overview focusing on key points",
-        "Detailed": "Conduct a thorough analysis with specific examples and data",
-        "Comprehensive": "Perform an exhaustive analysis with detailed insights, trends, and recommendations"
-    }
-
-    # Only include prompts for selected focus areas
-    focus_prompts = {
-        "Market Trends": "- Analyze current and emerging market trends\n- Identify growth patterns and market size\n- Highlight industry innovations",
-        "Competitor Analysis": "- Evaluate major competitors and their market share\n- Compare product features and pricing\n- Assess competitive advantages",
-        "Consumer Behavior": "- Examine target demographics and preferences\n- Analyze purchasing patterns\n- Identify key decision factors",
-        "Technology Features": "- Review current technology capabilities\n- Assess emerging technologies\n- Compare technical specifications",
-        "Pricing Strategy": "- Analyze current market pricing\n- Evaluate price-performance ratios\n- Identify pricing trends and strategies"
-    }
-
-    selected_focus_prompts = [focus_prompts[area] for area in focus_areas if area in focus_prompts]
+    selected_focus_prompts = [FOCUS_PROMPTS[area] for area in focus_areas if area in FOCUS_PROMPTS]
 
     print(f"[DEBUG] Enhancing query for focus areas: {focus_areas}")
 
     enhanced_query = f"""Conduct a {depth.lower()} market analysis regarding: {query}
 
 Analysis Depth: {depth}
-{depth_prompts[depth]}
+{DEPTH_PROMPTS[depth]}
 
 Selected Focus Areas:
 {chr(10).join(selected_focus_prompts)}
@@ -55,12 +38,23 @@ def convert_to_html(markdown_text: str) -> str:
     </div>
     """
 
-def save_findings(findings_dict: dict, timestamp: str = None) -> tuple[str, str, str]:
-    """
-    Save intermediate findings to a separate file.
+def format_intermediate_findings(findings_dict: dict) -> str:
+    """Format intermediate findings dictionary into markdown string."""
+    if not findings_dict:
+        return ""
 
-    Returns:
-        tuple[str, str, str]: (file_path, preview_content, error_message)
+    content = "# Market Research - Intermediate Findings\n\n"
+    content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+    for agent, data in findings_dict.items():
+        if isinstance(data, dict) and "findings" in data:
+            content += f"## {agent.replace('_', ' ').title()}\n"
+            content += f"{data['findings']}\n\n"
+    return content
+
+def save_findings(findings_dict: dict, timestamp: str = None, format: str = "markdown") -> tuple[str, str, str]:
+    """
+    Save intermediate findings in the specified format.
     """
     if not findings_dict:
         return "", "", ""
@@ -68,23 +62,51 @@ def save_findings(findings_dict: dict, timestamp: str = None) -> tuple[str, str,
     timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
-        os.makedirs("reports", exist_ok=True)
+        reports_dir = os.path.abspath(os.path.join(os.getcwd(), "reports"))
+        os.makedirs(reports_dir, exist_ok=True)
 
-        findings_content = "# Market Research - Intermediate Findings\n\n"
-        findings_content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        # Use the common formatting function
+        findings_content = format_intermediate_findings(findings_dict)
 
-        for agent, data in findings_dict.items():
-            if "findings" in data:
-                findings_content += f"## {agent.replace('_', ' ').title()}\n"
-                findings_content += f"{data['findings']}\n\n"
+        if format == "markdown":
+            file_path = os.path.join(reports_dir, f"findings_{timestamp}.md")
+            with open(file_path, "w", encoding='utf-8') as f:
+                f.write(findings_content)
+            return file_path, findings_content, ""
 
-        file_path = f"reports/findings_{timestamp}.md"
-        with open(file_path, "w", encoding='utf-8') as f:
-            f.write(findings_content)
+        elif format == "html":
+            file_path = os.path.join(reports_dir, f"findings_{timestamp}.html")
+            html_content = convert_to_html(findings_content)
+            with open(file_path, "w", encoding='utf-8') as f:
+                f.write(html_content)
+            return file_path, html_content, ""
 
-        return file_path, findings_content, ""
+        elif format == "pdf":
+            try:
+                pdf_path = os.path.join(reports_dir, f"findings_{timestamp}.pdf")
+                print(f"[DEBUG] Creating PDF at: {pdf_path}")
+
+                success = create_pdf_from_markdown(
+                    markdown_content=findings_content,
+                    output_file=pdf_path,
+                    title="Market Research - Intermediate Findings"
+                )
+
+                if success and os.path.exists(pdf_path):
+                    print(f"[DEBUG] PDF created successfully at: {pdf_path}")
+                    return pdf_path, findings_content, ""
+                else:
+                    return "", findings_content, f"Error: PDF file was not created at {pdf_path}"
+
+            except Exception as pdf_error:
+                print(f"[DEBUG] PDF creation error: {str(pdf_error)}")
+                return "", findings_content, f"Error creating PDF: {str(pdf_error)}"
+
+        else:
+            return "", findings_content, f"Unsupported format: {format}"
 
     except Exception as e:
+        print(f"[DEBUG] Error saving findings: {str(e)}")
         return "", findings_content, f"Error saving findings: {str(e)}"
 
 def save_report(content: str, timestamp: str = None, format: str = "markdown") -> tuple[str, str, str]:
@@ -148,18 +170,6 @@ def save_report(content: str, timestamp: str = None, format: str = "markdown") -
     except Exception as e:
         print(f"[DEBUG] General error in save_report: {str(e)}")
         return "", report_content, f"Error saving report: {str(e)}"
-
-def format_intermediate_findings(findings_dict: dict) -> str:
-    """Format intermediate findings dictionary into markdown string."""
-    if not findings_dict:
-        return ""
-
-    content = "## Intermediate Findings\n\n"
-    for agent, data in findings_dict.items():
-        if "findings" in data:
-            content += f"### {agent.replace('_', ' ').title()}\n"
-            content += f"{data['findings']}\n\n"
-    return content
 
 def conduct_research(
     query: str,
@@ -234,7 +244,6 @@ def conduct_research(
                             None,              # findings_file_pdf
                             status_msg,        # error_message
                             status_text,       # status_log
-                            False              # download_row visibility
                         )
                         break  # Exit the loop on error
 
@@ -259,7 +268,6 @@ def conduct_research(
                         None,                # findings_file_pdf
                         "",                  # error_message
                         status_text,       # status_log
-                        False              # download_row visibility
                     )
 
                 except Empty:
@@ -278,74 +286,65 @@ def conduct_research(
         # After research is complete...
         if result and not error_occurred:
             try:
-                # Save both files
-                report_path, report_content, report_error = save_report(
-                    content=result.get("final_report", ""),
-                    timestamp=timestamp,
-                    format="markdown"
-                )
-
-                findings_path, _, findings_error = save_findings(
-                    findings_dict=result.get("agent_outputs", {}),
-                    timestamp=timestamp
-                )
-
-                error_msg = " ".join(filter(None, [report_error, findings_error]))
-
-                # Format final findings as string
-                final_findings = format_intermediate_findings(result.get("agent_outputs", {}))
-
-                # Ensure report_path is None if it's not a valid file
-                if report_path and not os.path.isfile(report_path):
-                    report_path = None
-                    error_msg = f"Error: Generated report path is invalid: {report_path}"
-
-                # Ensure findings_path is None if it's not a valid file
-                if findings_path and not os.path.isfile(findings_path):
-                    findings_path = None
-                    error_msg = f"{error_msg}\nError: Generated findings path is invalid: {findings_path}"
+                # Generate findings content first
+                final_report_content = result.get("final_report", "")
 
                 # Generate reports in all formats
                 report_path_md, _, report_error_md = save_report(
-                    content=result.get("final_report", ""),
+                    content=final_report_content,
                     timestamp=timestamp,
                     format="markdown"
                 )
                 report_path_html, _, report_error_html = save_report(
-                    content=result.get("final_report", ""),
+                    content=final_report_content,
                     timestamp=timestamp,
                     format="html"
                 )
                 report_path_pdf, _, report_error_pdf = save_report(
-                    content=result.get("final_report", ""),
+                    content=final_report_content,
                     timestamp=timestamp,
                     format="pdf"
                 )
 
-                # Generate findings in all formats
+                # Save findings in all formats
                 findings_path_md, _, findings_error_md = save_findings(
                     findings_dict=result.get("agent_outputs", {}),
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    format="markdown"
                 )
-                findings_path_html, _, findings_error_html = save_report(
-                    content=format_intermediate_findings(result.get("agent_outputs", {})),
-                    timestamp=f"{timestamp}_findings",
+                findings_path_html, _, findings_error_html = save_findings(
+                    findings_dict=result.get("agent_outputs", {}),
+                    timestamp=timestamp,
                     format="html"
                 )
-                findings_path_pdf, _, findings_error_pdf = save_report(
-                    content=format_intermediate_findings(result.get("agent_outputs", {})),
-                    timestamp=f"{timestamp}_findings",
+                findings_path_pdf, _, findings_error_pdf = save_findings(
+                    findings_dict=result.get("agent_outputs", {}),
+                    timestamp=timestamp,
                     format="pdf"
                 )
 
+                # Collect all errors
                 error_msg = " ".join(filter(None, [
                     report_error_md, report_error_html, report_error_pdf,
                     findings_error_md, findings_error_html, findings_error_pdf
                 ]))
 
+                # Format final findings as string
+                final_findings = format_intermediate_findings(result.get("agent_outputs", {}))
+
+                # Ensure report_path is None if it's not a valid file
+                if report_path_md and not os.path.isfile(report_path_md):
+                    report_path_md = None
+                    error_msg = f"Error: Generated report path is invalid: {report_path_md}"
+
+                # Ensure findings_path is None if it's not a valid file
+                if findings_path_md and not os.path.isfile(findings_path_md):
+                    findings_path_md = None
+                    error_msg = f"{error_msg}\nError: Generated findings path is invalid: {findings_path_md}"
+
                 yield (
                     final_findings,                  # intermediate_output
-                    result.get("final_report", ""),  # final_report
+                    final_report_content,           # final_report
                     report_path_md,                  # report_file_md
                     report_path_html,                # report_file_html
                     report_path_pdf,                 # report_file_pdf
@@ -354,7 +353,6 @@ def conduct_research(
                     findings_path_pdf,               # findings_file_pdf
                     error_msg,                       # error_message
                     status_text + "\n✅ Files saved successfully!" if not error_msg else status_text + f"\n⚠️ {error_msg}",  # status_log
-                    True                            # download_row visibility
                 )
 
             except Exception as e:
@@ -370,7 +368,6 @@ def conduct_research(
                     None,              # findings_file_pdf
                     error_msg,         # error_message
                     status_text + f"\n❌ Error: {error_msg}",  # status_log
-                    False              # download_row visibility
                 )
 
     except Exception as e:
@@ -386,7 +383,6 @@ def conduct_research(
             None,             # findings_file_pdf
             error_msg,         # error_message
             status_text + f"\n❌ Error: {error_msg}",  # status_log
-            False              # download_row visibility
         )
 
 def create_interface():
@@ -541,24 +537,7 @@ def create_interface():
             )
 
         with gr.Row():
-            download_section = gr.HTML(
-                visible=False,
-                value="""
-                <div id="downloads-container">
-                    <div style="display: flex; gap: 20px;">
-                        <div style="flex: 0.5">
-                            <h3>Final Report Downloads</h3>
-                        </div>
-                        <div style="flex: 0.5">
-                            <h3>Findings Downloads</h3>
-                        </div>
-                    </div>
-                </div>
-                """
-            )
-
-        with gr.Row():
-            with gr.Column(scale=0.5):
+            with gr.Column(scale=1):
                 report_file_md = gr.File(
                     label="Download Report (Markdown)",
                     visible=True,
@@ -578,7 +557,7 @@ def create_interface():
                     interactive=False
                 )
 
-            with gr.Column(scale=0.5):
+            with gr.Column(scale=1):
                 findings_file_md = gr.File(
                     label="Download Findings (Markdown)",
                     visible=True,
@@ -622,7 +601,6 @@ def create_interface():
                 findings_file_pdf,
                 error_message,
                 status_log,
-                download_section
             ],
             show_progress=False
         )

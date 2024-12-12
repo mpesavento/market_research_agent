@@ -44,38 +44,46 @@ class SearchQueries(BaseModel):
 def market_trends_node(state: MarketResearchState):
     """Node for market trends research"""
     focus_areas = state.get("focus_areas", [])
-    print(f"[DEBUG] Market Trends Node - Focus Areas: {focus_areas}")
-
-    # Skip if not in focus areas
     if "market_trends" not in focus_areas:
-        print("[DEBUG] Skipping Market Trends Node")
-        return {
-            **state,
-            "next_agent": "competitor",
-        }
+        return {**state, "next_agent": "competitor"}
 
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.MARKET_TRENDS_START)
     start_time = time.time()
 
+    # Format base prompt with context
+    previous_findings = json.dumps(state.get('research_data', {}), indent=2)
+    current_query = state['messages'][-1].content if state['messages'] else "Analyze market trends"
+
+    formatted_prompt = BASE_PROMPT.format(
+        role_description=MARKET_TRENDS_ROLE,
+        research_context=current_query,
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
+    # Generate search queries
     queries = model.with_structured_output(SearchQueries).invoke([
-        SystemMessage(content=MARKET_TRENDS_ROLE),
-        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze market trends")
+        SystemMessage(content=formatted_prompt)
     ])
 
     research_data = state.get('research_data', {})
-
-    # Perform searches and collect results
     search_results = []
     for query in queries.queries:
         results = search_tool.invoke({"query": query})
         search_results.extend(results)
 
-    # Process results with LLM
+    # Analyze results using the same base prompt
+    analysis_prompt = BASE_PROMPT.format(
+        role_description=MARKET_TRENDS_ROLE,
+        research_context=f"Analyze these market trends:\n\n{json.dumps(search_results)}",
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
     response = model.invoke([
-        SystemMessage(content=MARKET_TRENDS_ROLE),
-        HumanMessage(content=f"Analyze these market trends:\n\n{json.dumps(search_results)}")
+        SystemMessage(content=analysis_prompt)
     ])
 
     research_data['market_trends'] = {
@@ -101,38 +109,43 @@ def market_trends_node(state: MarketResearchState):
 def competitor_node(state: MarketResearchState):
     """Node for competitor analysis"""
     focus_areas = state.get("focus_areas", [])
-    print(f"[DEBUG] Competitor Node - Focus Areas: {focus_areas}")
-
-    # Skip if not in focus areas
     if "competitor_analysis" not in focus_areas:
-        print("[DEBUG] Skipping Competitor Node")
-        return {
-            **state,
-            "next_agent": "consumer",
-        }
+        return {**state, "next_agent": "consumer"}
 
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.COMPETITOR_START)
     start_time = time.time()
 
+    previous_findings = json.dumps(state.get('research_data', {}), indent=2)
+    current_query = state['messages'][-1].content if state['messages'] else "Analyze competitors"
+
+    formatted_prompt = BASE_PROMPT.format(
+        role_description=COMPETITOR_ROLE,
+        research_context=current_query,
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
     queries = model.with_structured_output(SearchQueries).invoke([
-        SystemMessage(content=COMPETITOR_ROLE),
-        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze competitors")
+        SystemMessage(content=formatted_prompt)
     ])
 
     research_data = state.get('research_data', {})
-
-    # Perform searches and collect results
     search_results = []
     for query in queries.queries:
         results = search_tool.invoke({"query": query})
         search_results.extend(results)
 
-    # Process results with LLM
+    analysis_prompt = BASE_PROMPT.format(
+        role_description=COMPETITOR_ROLE,
+        research_context=f"Analyze these competitor insights:\n\n{json.dumps(search_results)}",
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
     response = model.invoke([
-        SystemMessage(content=COMPETITOR_ROLE),
-        HumanMessage(content=f"Analyze these competitor insights:\n\n{json.dumps(search_results)}")
+        SystemMessage(content=analysis_prompt)
     ])
 
     research_data['competitor'] = {
@@ -158,57 +171,57 @@ def competitor_node(state: MarketResearchState):
 def consumer_node(state: MarketResearchState):
     """Node for consumer analysis"""
     focus_areas = state.get("focus_areas", [])
-    print(f"[DEBUG] Consumer Node - Focus Areas: {focus_areas}")
-
-    # Skip if not in focus areas
     if "consumer_behavior" not in focus_areas:
-        print("[DEBUG] Skipping Consumer Node")
-        return {
-            **state,
-            "next_agent": "report",
-        }
+        return {**state, "next_agent": "report"}
 
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.CONSUMER_START)
     start_time = time.time()
 
+    previous_findings = json.dumps(state.get('research_data', {}), indent=2)
+    current_query = state['messages'][-1].content if state['messages'] else "Analyze consumer behavior"
+
+    formatted_prompt = BASE_PROMPT.format(
+        role_description=CONSUMER_ROLE,
+        research_context=current_query,
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
     queries = model.with_structured_output(SearchQueries).invoke([
-        SystemMessage(content=CONSUMER_ROLE),
-        HumanMessage(content=state['messages'][-1].content if state['messages'] else "Analyze consumer behavior")
+        SystemMessage(content=formatted_prompt)
     ])
 
-    # Initialize research_data if it doesn't exist
     research_data = state.get('research_data', {})
-    # print(f"[DEBUG] Consumer Node - Initial Research Data: {research_data}")
-
-    # Perform searches and collect results
     search_results = []
     for query in queries.queries:
         results = search_tool.invoke({"query": query})
         search_results.extend(results)
 
-    # Process results with LLM
+    analysis_prompt = BASE_PROMPT.format(
+        role_description=CONSUMER_ROLE,
+        research_context=f"Analyze these consumer insights:\n\n{json.dumps(search_results)}",
+        previous_findings=previous_findings,
+        query=current_query
+    )
+
     response = model.invoke([
-        SystemMessage(content=CONSUMER_ROLE),
-        HumanMessage(content=f"Analyze these consumer insights:\n\n{json.dumps(search_results)}")
+        SystemMessage(content=analysis_prompt)
     ])
 
-    # Store the findings
     research_data['consumer'] = {
         "last_update": datetime.now().isoformat(),
         "findings": response.content,
         "search_results": search_results
     }
 
-    # print(f"[DEBUG] Consumer Node - Updated Research Data: {research_data}")
-
     end_time = time.time()
     elapsed_time = end_time - start_time
     if status_callback:
         status_callback(f"{AgentStatus.CONSUMER_COMPLETE} (took {elapsed_time:.2f} seconds)")
 
-    updated_state = {
+    return {
         "messages": state.get('messages', []) + [response],
         "research_data": research_data,
         "next_agent": "report",
@@ -216,73 +229,36 @@ def consumer_node(state: MarketResearchState):
         "_status_callback": status_callback,
         "focus_areas": focus_areas
     }
-    print(f"[DEBUG] Consumer Node - Returning State Keys: {updated_state.keys()}")
-    return updated_state
 
 def report_node(state: MarketResearchState):
     """Node for generating final report"""
-    print("[DEBUG] Report Node - Entering with State Keys:", state.keys())
-
-    focus_areas = state.get("focus_areas", [])
     status_callback = state.get("_status_callback")
     if status_callback:
         status_callback(AgentStatus.REPORT_START)
 
     research_data = state.get('research_data', {})
-    print("[DEBUG] Report Node - Research Data Keys:", research_data.keys())
+    current_query = state['messages'][-1].content if state['messages'] else "Generate final report"
+    previous_findings = json.dumps(research_data, indent=2)
 
-    # Get the original query from the last message
-    original_query = state['messages'][-1].content if state['messages'] else "No query provided"
+    formatted_prompt = BASE_PROMPT.format(
+        role_description=REPORT_ROLE,
+        research_context="Generate comprehensive final report",
+        previous_findings=previous_findings,
+        query=current_query
+    )
 
-    # Start with the query section
-    report_content = f"""## Research Query
-{original_query}
+    response = model.invoke([
+        SystemMessage(content=formatted_prompt)
+    ])
 
-"""
+    if status_callback:
+        status_callback(AgentStatus.REPORT_COMPLETE)
 
-    # Map focus areas to research data keys
-    focus_area_mapping = {
-        "market_trends": "market_trends",
-        "competitor_analysis": "competitor",
-        "consumer_behavior": "consumer"
+    return {
+        **state,
+        "final_report": response.content,
+        "next_agent": END
     }
-
-    # Check each focus area for data
-    for focus_area in focus_areas:
-        data_key = focus_area_mapping.get(focus_area)
-        if data_key and data_key in research_data:
-            findings = research_data[data_key].get('findings', '')
-            if findings:
-                print(f"[DEBUG] Report Node - Found {focus_area} data")
-                report_content += f"## {focus_area.replace('_', ' ').title()}\n{findings}\n\n"
-
-    # Generate report if we have content
-    if report_content:
-        print("[DEBUG] Report Node - Generating report")
-        report_prompt = f"Based on our research:\n\n{report_content}\n\nPlease generate a comprehensive market research report that synthesizes these findings."
-
-        response = model.invoke([
-            SystemMessage(content=REPORT_ROLE),
-            HumanMessage(content=report_prompt)
-        ])
-
-        final_report = f"{report_content}\n{response.content}"
-        print(f"[DEBUG] Report Node - Generated Report Length: {len(final_report)}")
-
-        if status_callback:
-            status_callback(AgentStatus.REPORT_COMPLETE)
-
-        return {
-            **state,
-            "final_report": final_report,
-            "next_agent": END
-        }
-    else:
-        print("[DEBUG] Report Node - No research sections found")
-        error_msg = "No research data was found for the selected focus areas."
-        if status_callback:
-            status_callback(f"❌ Error: {error_msg}")
-        raise RuntimeError(error_msg)
 
 def should_continue(state: MarketResearchState):
     """Determine next node based on state"""
